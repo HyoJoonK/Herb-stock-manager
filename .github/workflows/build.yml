@@ -33,6 +33,10 @@ jobs:
           node-version: '20'
           cache: 'npm'
 
+      - name: Setup MSVC Developer Command Prompt
+        if: matrix.os == 'windows-latest'
+        uses: ilammy/msvc-dev-cmd@v1
+
       - name: Install dependencies
         run: npm ci
 
