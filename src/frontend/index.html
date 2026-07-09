@@ -1,0 +1,496 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>한의원 약재 재고 관리 시스템</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+  <!-- ====================================================
+       Top Navigation Header (탭바 메뉴)
+       ==================================================== -->
+  <header class="main-header">
+    <div class="brand-title">
+      🌿 <span>Herb Stock</span>
+    </div>
+    <nav class="main-tabs" id="mainTabs">
+      <button class="tab-btn active" data-tab="inquiry">🔍 조회 (Alt+1)</button>
+      <button class="tab-btn" data-tab="prescription">📋 처방 (Alt+2)</button>
+      <button class="tab-btn" data-tab="predict">💡 발주 예측 (Alt+3)</button>
+      <button class="tab-btn" data-tab="batch">📦 일괄 작업 (Alt+4)</button>
+    </nav>
+    <div style="display: flex; align-items: center; gap: 12px; font-size: 11px; color: var(--color-text-muted);">
+      <span>포커스 리턴: <kbd style="background:#e0e5e2; padding:2px 4px; border-radius:3px;">/</kbd></span>
+      <button class="btn" id="btnSettings" style="padding: 4px 8px; font-size: 11px; border-radius: var(--radius-sm); cursor: pointer;">⚙️ 설정</button>
+    </div>
+  </header>
+
+  <!-- ====================================================
+       App Content Container (탭별 뷰 전환 구역)
+       ==================================================== -->
+  <main class="app-content-container">
+
+    <!-- ----------------------------------------------------
+         1. [조회] 탭 뷰
+         ---------------------------------------------------- -->
+    <div class="tab-content-view active" id="view-inquiry">
+      <!-- 좌측 약재 목록 사이드바 -->
+      <div class="left-sidebar">
+        <div class="search-header">
+          <div class="search-input-wrapper">
+            <span class="search-icon">🔍</span>
+            <input type="text" class="tab-search-input" id="inquirySearchInput" placeholder="약재명 또는 초성 검색..." autocomplete="off">
+          </div>
+        </div>
+        <div class="category-container" id="inquiryCategoryContainer">
+          <!-- JS에서 동적 추가됨 -->
+        </div>
+        <div class="list-wrapper">
+          <div class="medicine-list" id="inquiryMedicineList"></div>
+        </div>
+        <div class="control-panel">
+          <input type="file" class="csv-file-input" style="display: none;">
+          <button class="btn btn-csv-import">📥 CSV 불러오기</button>
+          <button class="btn btn-csv-export">📤 CSV 내보내기</button>
+          <button class="btn btn-primary btn-med-add">➕ DB 추가하기</button>
+        </div>
+      </div>
+      
+      <!-- 우측 약재 상세 정보 뷰 -->
+      <div class="right-main-panel">
+        <div class="card split-card-top" id="inquiryDetailCard">
+          <div class="card-header">
+            <div class="card-title">🔍 약재 상세 정보</div>
+            <span style="font-size:11px; color:var(--color-text-muted);">목록에서 우클릭 시 데이터를 바로 수정할 수 있습니다.</span>
+          </div>
+          <div class="card-content" style="display: flex; flex-direction: column;">
+            <div id="inquiryDetailEmpty" class="empty-state" style="margin: auto 0;">
+              <span>조회할 약재를 좌측에서 선택한 뒤 Enter를 쳐주세요.</span>
+            </div>
+            <div id="inquiryDetailContent" style="display: none;">
+              <div class="med-detail-grid">
+                <!-- 상세 정보 테이블 -->
+                <table class="detail-info-table">
+                  <tr>
+                    <th>약재명</th>
+                    <td id="detName" style="font-weight: 700; color: var(--color-primary);">당귀</td>
+                  </tr>
+                  <tr>
+                    <th>카테고리</th>
+                    <td id="detCategory">보혈약</td>
+                  </tr>
+                  <tr>
+                    <th>팩 규격</th>
+                    <td id="detPackSize">500g</td>
+                  </tr>
+                  <tr>
+                    <th>총 재고량</th>
+                    <td id="detTotalStock" style="font-weight: 700;">총 2,500g (5봉지 남음)</td>
+                  </tr>
+                  <tr>
+                    <th>안전 재고</th>
+                    <td id="detSafetyStock">1,500g</td>
+                  </tr>
+                  <tr>
+                    <th>표시 단위</th>
+                    <td id="detUnit">g</td>
+                  </tr>
+                </table>
+                <!-- Canvas 사용량 그래프 -->
+                <div class="chart-container">
+                  <div class="chart-title">📈 최근 30일 조제 소모 추이 (g)</div>
+                  <canvas id="usageChart" width="320" height="150"></canvas>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        
+        <!-- 약재별 변경 내역 로그 카드 -->
+        <div class="card split-card-bottom">
+          <div class="card-header">
+            <div class="card-title">🕒 해당 약재 입출고/조정 변경 내역</div>
+          </div>
+          <div class="card-content" style="padding: 10px 20px; display: flex; flex-direction: column;">
+            <div id="inquiryLogsEmpty" class="empty-state" style="margin: auto 0;">
+              <span>변경 내역이 없습니다.</span>
+            </div>
+            <div class="log-table-wrapper" id="inquiryLogsWrapper" style="display: none; flex: 1;">
+              <table class="presc-table">
+                <thead>
+                  <tr>
+                    <th>구분</th>
+                    <th>변동량</th>
+                    <th>일시</th>
+                    <th>비고</th>
+                  </tr>
+                </thead>
+                <tbody id="inquiryLogsBody"></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ----------------------------------------------------
+         2. [처방] 탭 뷰
+         ---------------------------------------------------- -->
+    <div class="tab-content-view" id="view-prescription">
+      <!-- 좌측 처방용 약재 검색 사이드바 -->
+      <div class="left-sidebar">
+        <div class="search-header">
+          <div class="search-input-wrapper">
+            <span class="search-icon">🔍</span>
+            <input type="text" class="tab-search-input" id="prescriptionSearchInput" placeholder="조제 약재 검색..." autocomplete="off">
+          </div>
+        </div>
+        <div class="category-container" id="prescriptionCategoryContainer"></div>
+        <div class="list-wrapper">
+          <div class="medicine-list" id="prescriptionMedicineList"></div>
+        </div>
+        <div class="control-panel">
+          <button class="btn btn-csv-import">📥 CSV 불러오기</button>
+          <button class="btn btn-csv-export">📤 CSV 내보내기</button>
+          <button class="btn btn-primary btn-med-add">➕ DB 추가하기</button>
+        </div>
+      </div>
+
+      <!-- 우측 처방전 작성 및 과거 처방 목록 -->
+      <div class="right-main-panel">
+        <!-- 처방전 작성기 -->
+        <div class="card split-card-top">
+          <div class="card-header">
+            <div class="card-title">📝 처방전 조제 작성</div>
+            <span style="font-size: 11px; color: var(--color-text-muted);">목록에서 Enter 시 소모량 입력 팝업 노출</span>
+          </div>
+          <div class="card-content" style="display: flex; flex-direction: column;">
+            <div class="presc-meta-row">
+              <div class="input-group">
+                <label for="prescriptionName">처방명</label>
+                <input type="text" id="prescriptionName" placeholder="예: 쌍화탕" autocomplete="off">
+              </div>
+              <div class="input-group">
+                <label for="patientName">환자명</label>
+                <input type="text" id="patientName" placeholder="예: 홍길동" autocomplete="off">
+              </div>
+            </div>
+
+            <div class="input-group" style="margin-bottom: 12px; flex: none;">
+              <label for="prescriptionNote">처방 메모</label>
+              <input type="text" id="prescriptionNote" placeholder="예: 하루 3회 복용, 식후 30분 따뜻하게 복용" autocomplete="off">
+            </div>
+
+            <div class="presc-table-wrapper" id="prescriptionTableWrapper" style="flex: 1; overflow-y: auto; margin-bottom: 12px; min-height: 0; display: none;">
+              <table class="presc-table">
+                <thead>
+                  <tr>
+                    <th>약재명</th>
+                    <th>규격</th>
+                    <th>소모량</th>
+                    <th style="width: 60px; text-align: center;">제거</th>
+                  </tr>
+                </thead>
+                <tbody id="prescriptionBody"></tbody>
+              </table>
+            </div>
+            
+            <div id="prescriptionEmpty" class="empty-state" style="flex: 1; display: flex; align-items: center; justify-content: center; margin-bottom: 12px;">
+              <span>추가된 약재가 없습니다.</span>
+            </div>
+
+            <div style="text-align: right; margin-top: auto;">
+              <button class="btn btn-primary" id="btnCompletePrescription" style="width: 100%; justify-content: center; padding: 12px 24px;">
+                💾 조제 완료 및 재고 차감 (Enter)
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- 과거 처방 기록 목록 -->
+        <div class="card split-card-bottom">
+          <div class="card-header">
+            <div class="card-title">📜 한의원 처방 완료 이력</div>
+          </div>
+          <div class="card-content" style="padding: 10px 20px; display: flex; flex-direction: column;">
+            <div id="pastPrescriptionsEmpty" class="empty-state" style="margin: auto 0;">
+              <span>과거 처방 이력이 없습니다.</span>
+            </div>
+            <div class="log-table-wrapper" id="pastPrescriptionsWrapper" style="display: none; flex: 1; max-height: 180px;">
+              <table class="presc-table">
+                <thead>
+                  <tr>
+                    <th>처방 ID</th>
+                    <th>처방명</th>
+                    <th>환자명</th>
+                    <th>포함 약재수</th>
+                    <th>조제 일시</th>
+                  </tr>
+                </thead>
+                <tbody id="pastPrescriptionsBody"></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ----------------------------------------------------
+         3. [발주 예측] 탭 뷰
+         ---------------------------------------------------- -->
+    <div class="tab-content-view" id="view-predict">
+      <div class="wide-panel">
+        <div class="card-header">
+          <div class="card-title">💡 통계 기반 동적 안전 재고 예측 및 발주 시스템</div>
+          <div style="display: flex; gap: 10px; align-items: center;">
+            <div class="input-group" style="flex-direction: row; align-items: center; gap: 6px;">
+              <label style="white-space: nowrap; font-size:12px;">배송 리드타임:</label>
+              <input type="number" id="predLeadTime" value="7" style="width: 50px; padding: 4px;" min="1">
+              <span style="font-size:12px;">일</span>
+            </div>
+            <div class="input-group" style="flex-direction: row; align-items: center; gap: 6px;">
+              <label style="white-space: nowrap; font-size:12px;">소모 분석기간:</label>
+              <input type="number" id="predAnalysisDays" value="30" style="width: 60px; padding: 4px;" min="7" max="90">
+              <span style="font-size:12px;">일</span>
+            </div>
+            <button class="btn btn-primary" id="btnSyncPredictor">🔄 동적 안전재고 갱신</button>
+          </div>
+        </div>
+        <div class="card-content" style="display: flex; flex-direction: column;">
+          <div id="predictEmpty" class="empty-state" style="margin: auto 0; display: none;">
+            <span>🎉 안전 재고 기준 이하인 약재가 없습니다.</span>
+          </div>
+          <div class="log-table-wrapper" id="predictTableWrapper" style="flex: 1; max-height: 500px;">
+            <table class="presc-table">
+              <thead>
+                <tr>
+                  <th>약재명</th>
+                  <th>카테고리</th>
+                  <th>팩 규격</th>
+                  <th>현재 재고</th>
+                  <th>안전 재고</th>
+                  <th>부족량</th>
+                  <th>다음 달 소모예측</th>
+                  <th>총 발주 제안</th>
+                  <th>권장 팩 수</th>
+                </tr>
+              </thead>
+              <tbody id="predictBody"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ----------------------------------------------------
+         4. [일괄 작업] 탭 뷰
+         ---------------------------------------------------- -->
+    <div class="tab-content-view" id="view-batch">
+      <!-- 좌측 약재 검색 사이드바 -->
+      <div class="left-sidebar">
+        <div class="search-header">
+          <div class="search-input-wrapper">
+            <span class="search-icon">🔍</span>
+            <input type="text" class="tab-search-input" id="batchSearchInput" placeholder="일괄 처리 약재 검색..." autocomplete="off">
+          </div>
+        </div>
+        <div class="category-container" id="batchCategoryContainer"></div>
+        <div class="list-wrapper">
+          <div class="medicine-list" id="batchMedicineList"></div>
+        </div>
+        <div class="control-panel">
+          <span style="font-size: 11px; color: var(--color-text-muted);">
+            Shift+선택 후 Enter 시 일괄추가 가능
+          </span>
+        </div>
+      </div>
+
+      <!-- 우측 일괄 작업용 테이블 -->
+      <div class="right-main-panel">
+        <div class="card" style="flex: 1;">
+          <div class="card-header">
+            <div class="card-title">📦 약재 데이터 일괄 편집기</div>
+            <div>
+              <button class="btn btn-accent" id="btnBatchClear">테이블 비우기</button>
+              <button class="btn btn-primary" id="btnBatchSave">💾 일괄 변경 저장</button>
+            </div>
+          </div>
+          <div class="card-content" style="display: flex; flex-direction: column;">
+            <div id="batchEmpty" class="empty-state" style="margin: auto 0;">
+              <span>일괄 편집할 약재를 좌측 리스트에서 검색한 뒤 Enter를 쳐서 추가해 주세요.</span>
+            </div>
+            <div class="batch-table-wrapper" id="batchTableWrapper" style="display: none;">
+              <table class="batch-table">
+                <thead>
+                  <tr>
+                    <th>약재명</th>
+                    <th>카테고리</th>
+                    <th>팩 규격(g)</th>
+                    <th>미개봉 팩 수</th>
+                    <th>개봉 잔량(g)</th>
+                    <th>안전 재고(g)</th>
+                    <th>표시 단위</th>
+                    <th style="width: 50px;">제거</th>
+                  </tr>
+                </thead>
+                <tbody id="batchTableBody"></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </main>
+
+  <!-- ====================================================
+       Modals & Context Menus (팝업 모달 영역)
+       ==================================================== -->
+  
+  <!-- g수 입력 소형 팝업 -->
+  <div class="popup-overlay" id="quantityPopup">
+    <div class="popup-content" style="text-align: center;">
+      <div style="font-size: 12px; color: var(--color-text-muted); margin-bottom: 4px;">처방 조제 소모량 입력</div>
+      <div class="popup-med-name" id="popupMedName" style="font-size: 20px; font-weight: 700; color: var(--color-primary); margin-bottom: 12px;">당귀</div>
+      <div class="popup-med-stock" id="popupMedStock" style="font-size: 12px; color: var(--color-text-muted);">총 2,500g (5봉지 남음)</div>
+      
+      <div style="display: flex; align-items: center; justify-content: center; gap: 8px; margin: 16px 0;">
+        <input type="number" id="popupQuantityInput" value="10" min="0.1" step="0.1" 
+               style="width: 100px; padding: 8px; border: 2px solid var(--color-primary-light); border-radius: var(--radius-md); font-size: 20px; font-weight: 700; text-align: center;">
+        <span style="font-size: 18px; font-weight: 600;">g</span>
+      </div>
+      
+      <div style="font-size: 11px; color: var(--color-text-muted); background-color: var(--bg-primary); padding: 8px; border-radius: var(--radius-sm);">
+        숫자 입력 후 <strong>Enter</strong> 입력 시 추가<br>
+        취소하려면 <strong>ESC</strong> 입력
+      </div>
+    </div>
+  </div>
+
+  <!-- DB 수동 추가 / 우클릭 데이터 수정 모달 (겸용) -->
+  <div class="modal-overlay" id="editMedicineModal">
+    <div class="modal-content" style="width: 400px;">
+      <div class="modal-header" id="editModalHeader">새로운 약재 수동 추가</div>
+      <div class="modal-form">
+        <input type="hidden" id="editMedId">
+        <div class="input-group">
+          <label for="editMedName">약재명 (필수)</label>
+          <input type="text" id="editMedName" placeholder="예: 독활" autocomplete="off">
+        </div>
+        <div class="input-group">
+          <label for="editMedCategorySelect">카테고리</label>
+          <select id="editMedCategorySelect">
+            <!-- JS에서 동적 로드 -->
+          </select>
+        </div>
+        <div class="input-group">
+          <label for="editMedPackSize">팩 기본 규격 g수 (필수)</label>
+          <input type="number" id="editMedPackSize" placeholder="예: 500" value="500" min="1">
+        </div>
+        <div class="input-group">
+          <label for="editMedUnopened">미개봉 팩(봉지) 수</label>
+          <input type="number" id="editMedUnopened" placeholder="예: 3" value="0" min="0">
+        </div>
+        <div class="input-group">
+          <label for="editMedRemain">개봉 팩 잔량 g수</label>
+          <input type="number" id="editMedRemain" placeholder="예: 250" value="0" min="0">
+        </div>
+        <div class="input-group">
+          <label for="editMedSafety">안전 재고 기준 g수</label>
+          <input type="number" id="editMedSafety" placeholder="예: 1500" value="1000" min="0">
+        </div>
+        <div class="input-group">
+          <label for="editMedUnit">표시 단위</label>
+          <input type="text" id="editMedUnit" value="g">
+        </div>
+        <div class="modal-actions">
+          <button class="btn" id="btnEditMedCancel">취소</button>
+          <button class="btn btn-primary" id="btnEditMedSave">저장</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 카테고리 동적 추가 입력 모달 -->
+  <div class="modal-overlay" id="addCategoryModal">
+    <div class="modal-content" style="width: 300px;">
+      <div class="modal-header">새 카테고리 추가</div>
+      <div class="modal-form">
+        <div class="input-group">
+          <label for="newCategoryName">카테고리명</label>
+          <input type="text" id="newCategoryName" placeholder="예: 보기약" autocomplete="off">
+        </div>
+        <div class="modal-actions">
+          <button class="btn" id="btnCategoryCancel">취소</button>
+          <button class="btn btn-primary" id="btnCategorySave">추가</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 처방 기록 상세 조회 모달 -->
+  <div class="modal-overlay" id="prescriptionDetailModal">
+    <div class="modal-content" style="width: 450px;">
+      <div class="modal-header">📜 처방 기록 상세조회</div>
+      <div class="modal-form">
+        <table class="detail-info-table" style="margin-bottom: 12px; width: 100%;">
+          <tr>
+            <th>처방명</th>
+            <td id="viewPrescName" style="font-weight:700; color:var(--color-primary);"></td>
+          </tr>
+          <tr>
+            <th>환자명</th>
+            <td id="viewPrescPatient"></td>
+          </tr>
+          <tr>
+            <th>조제일시</th>
+            <td id="viewPrescDate"></td>
+          </tr>
+          <tr>
+            <th>처방 메모</th>
+            <td id="viewPrescNote" style="font-style: italic; color:var(--color-text-muted);"></td>
+          </tr>
+        </table>
+        
+        <div style="font-size:12px; font-weight:700; color:var(--color-text-muted); margin-bottom: 6px;">📋 조제 약재 목록</div>
+        <div class="log-table-wrapper" style="max-height: 180px; margin-bottom: 16px;">
+          <table class="presc-table">
+            <thead>
+              <tr>
+                <th>약재명</th>
+                <th style="text-align: right;">소모량</th>
+              </tr>
+            </thead>
+            <tbody id="viewPrescItemsBody">
+              <!-- JS에서 동적 추가 -->
+            </tbody>
+          </table>
+        </div>
+        
+        <div style="text-align: right;">
+          <button class="btn btn-primary" id="btnViewPrescClose" style="padding: 8px 16px;">닫기</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 우클릭 퀵 컨텍스트 메뉴 -->
+  <div class="context-menu" id="medContextMenu">
+    <div class="context-menu-item" id="ctxMenuEdit">✏️ 약재 수정</div>
+    <div class="context-menu-item" id="ctxMenuDelete" style="color: var(--color-accent);">🗑️ 약재 삭제</div>
+  </div>
+
+  <!-- Toast 알림 배너 -->
+  <div class="toast" id="toastMessage">알림 메시지</div>
+
+  <!-- JavaScript 모듈 로드 -->
+  <script src="../backend/InventoryManager.js"></script>
+  <script src="../backend/CSVHandler.js"></script>
+  <script src="../backend/SmartPredictor.js"></script>
+  <script src="QuickSearchEngine.js"></script>
+  <script src="renderer.js"></script>
+
+</body>
+</html>

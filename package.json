@@ -1,0 +1,54 @@
+{
+  "name": "herb-stock-manager",
+  "version": "0.1.0",
+  "description": "한의원 전용 약재 재고 관리 프로그램 (초고속 키보드 워크플로우)",
+  "main": "src/main.js",
+  "scripts": {
+    "start": "electron .",
+    "dist": "electron-builder"
+  },
+  "keywords": [
+    "electron",
+    "herb",
+    "inventory",
+    "sqlite"
+  ],
+  "author": "Antigravity",
+  "license": "ISC",
+  "dependencies": {
+    "better-sqlite3": "^12.0.0"
+  },
+  "devDependencies": {
+    "electron": "^31.0.0",
+    "electron-builder": "^24.13.3"
+  },
+  "build": {
+    "appId": "com.hyojoonk.herbstockmanager",
+    "productName": "HerbStockManager",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "src/**/*",
+      "package.json"
+    ],
+    "mac": {
+      "target": [
+        "dmg",
+        "zip"
+      ],
+      "arch": [
+        "arm64"
+      ]
+    },
+    "win": {
+      "target": [
+        "nsis"
+      ],
+      "arch": [
+        "x64"
+      ]
+    },
+    "asar": true
+  }
+}

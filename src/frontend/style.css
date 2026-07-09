@@ -1,0 +1,735 @@
+/**
+ * @file style.css
+ * @description 프리미엄 화이트 테마(Sleek Light Mode) 스타일시트.
+ * 2차 변경: 4대 탭 레이아웃, 다중 선택(Shift) 비주얼, 우클릭 수정 모달 및 Canvas 차트 배치 추가
+ */
+
+/* ----------------------------------------------------
+   1. Design System & CSS Variables
+   ---------------------------------------------------- */
+:root {
+  --bg-primary: #f5f7f6;
+  --bg-card: #ffffff;
+  --bg-focus: #edf5f0;
+  --bg-input: #eff2f0;
+  
+  --color-primary: #2d5a27;      /* 딥 포레스트 세이지 그린 */
+  --color-primary-light: #52b788;/* 맑은 리프 그린 */
+  --color-primary-bg: #e8f5e9;   /* 아주 부드러운 그린 백 */
+  --color-text-main: #242c27;    /* 가독성 높은 흑록색 */
+  --color-text-muted: #607064;   /* 차분한 올리브 그레이 */
+  
+  --color-border: #d8e2dc;
+  --color-accent: #e63946;       /* 강력한 강조 레드 (경고용) */
+  --color-accent-bg: #ffeef0;
+  
+  --shadow-sm: 0 2px 5px rgba(45, 90, 39, 0.04);
+  --shadow-md: 0 8px 20px rgba(45, 90, 39, 0.08);
+  --shadow-lg: 0 16px 36px rgba(45, 90, 39, 0.12);
+  
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 16px;
+  
+  --transition-fast: 0.12s ease;
+  --transition-normal: 0.22s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* ----------------------------------------------------
+   2. Reset & Typography
+   ---------------------------------------------------- */
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans KR", sans-serif;
+  background-color: var(--bg-primary);
+  color: var(--color-text-main);
+  height: 100vh;
+  overflow: hidden;
+  line-height: 1.4;
+  display: flex;
+  flex-direction: column;
+}
+
+/* ----------------------------------------------------
+   3. Focus Outline (키보드 내비게이션용 초점 링)
+   ---------------------------------------------------- */
+.keyboard-focused {
+  outline: 3px solid var(--color-primary-light) !important;
+  outline-offset: 1px;
+  background-color: var(--bg-focus) !important;
+  box-shadow: 0 0 10px rgba(82, 183, 136, 0.4) !important;
+}
+
+/* ----------------------------------------------------
+   4. Top Navigation Tab Bar (4대 메인 탭바)
+   ---------------------------------------------------- */
+.main-header {
+  background-color: var(--bg-card);
+  border-bottom: 1px solid var(--color-border);
+  padding: 10px 24px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  box-shadow: var(--shadow-sm);
+  z-index: 100;
+}
+
+.brand-title {
+  font-size: 16px;
+  font-weight: 800;
+  color: var(--color-primary);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.main-tabs {
+  display: flex;
+  gap: 6px;
+}
+
+.tab-btn {
+  padding: 10px 18px;
+  border: 1px solid transparent;
+  background: none;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--color-text-muted);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  transition: var(--transition-fast);
+}
+
+.tab-btn:hover {
+  background-color: var(--bg-primary);
+  color: var(--color-text-main);
+}
+
+.tab-btn.active {
+  background-color: var(--color-primary-bg);
+  color: var(--color-primary);
+  border-color: var(--color-primary-light);
+}
+
+/* ----------------------------------------------------
+   5. App Layout & Views (탭 전환 제어)
+   ---------------------------------------------------- */
+.app-content-container {
+  display: flex;
+  flex-direction: column;
+  height: calc(100vh - 58px);
+  width: 100vw;
+  padding: 16px 20px;
+  overflow: hidden;
+  position: relative;
+}
+
+.tab-content-view {
+  display: none; /* 기본 숨김 */
+  flex: 1;
+  min-height: 0;
+  height: 100%; /* 부모의 calc 높이를 상속하여 자식 sidebar의 height:100%가 깨지지 않게 보장 */
+  width: 100%;
+  gap: 20px;
+}
+
+.tab-content-view.active {
+  display: flex; /* 활성화 시 노출 */
+}
+
+/* 좌/우 분할 레이아웃 표준 규격 */
+.left-sidebar {
+  flex: 3.5;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-card);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-md);
+  border: 1px solid var(--color-border);
+  overflow: hidden;
+}
+
+.right-main-panel {
+  flex: 6.5;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  overflow: hidden;
+}
+
+/* 단일 화면 와이드 레이아웃 */
+.wide-panel {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-card);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-md);
+  border: 1px solid var(--color-border);
+  overflow: hidden;
+}
+
+/* ----------------------------------------------------
+   6. Search Input wrapper
+   ---------------------------------------------------- */
+.search-header {
+  padding: 16px 16px 8px 16px;
+}
+
+.search-input-wrapper {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.search-input-wrapper input {
+  width: 100%;
+  padding: 12px 16px 12px 40px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  font-size: 15px;
+  background-color: var(--bg-input);
+  color: var(--color-text-main);
+  transition: var(--transition-fast);
+}
+
+.search-input-wrapper input:focus {
+  outline: none;
+  border-color: var(--color-primary-light);
+  background-color: var(--bg-card);
+}
+
+.search-icon {
+  position: absolute;
+  left: 14px;
+  color: var(--color-text-muted);
+}
+
+/* ----------------------------------------------------
+   7. Category Tabs (+ 추가 버튼 포함)
+   ---------------------------------------------------- */
+.category-container {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 16px;
+  overflow-x: auto;
+  scrollbar-width: none;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.category-tab {
+  padding: 6px 12px;
+  background-color: var(--bg-input);
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  color: var(--color-text-muted);
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: var(--transition-fast);
+}
+
+.category-tab.active {
+  background-color: var(--color-primary-bg);
+  color: var(--color-primary);
+  border-color: var(--color-primary-light);
+}
+
+.category-add-btn {
+  padding: 6px 10px;
+  background-color: var(--bg-card);
+  border: 1px dashed var(--color-primary-light);
+  border-radius: var(--radius-sm);
+  color: var(--color-primary);
+  font-size: 12px;
+  font-weight: bold;
+  cursor: pointer;
+  transition: var(--transition-fast);
+}
+
+.category-add-btn:hover {
+  background-color: var(--bg-focus);
+}
+
+/* ----------------------------------------------------
+   8. Medicine List (Shift 다중 선택 비주얼 대응)
+   ---------------------------------------------------- */
+.list-wrapper {
+  flex: 1;
+  overflow-y: auto;
+  padding: 8px 16px;
+}
+
+.medicine-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 14px;
+  border-radius: var(--radius-md);
+  margin-bottom: 6px;
+  background-color: var(--bg-card);
+  border: 1px solid var(--color-border);
+  cursor: pointer;
+  transition: var(--transition-fast);
+  user-select: none; /* 드래그 차단 */
+}
+
+.medicine-item:hover {
+  border-color: var(--color-primary-light);
+}
+
+/* Shift 다중 선택 클래스 */
+.medicine-item.multi-selected {
+  background-color: var(--color-primary-bg) !important;
+  border-color: var(--color-primary-light) !important;
+}
+
+.med-name {
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.med-stock {
+  font-size: 12px;
+  color: var(--color-text-muted);
+}
+
+.status-badge {
+  font-size: 10px;
+  padding: 2px 6px;
+  border-radius: 12px;
+  font-weight: 700;
+}
+
+.status-normal {
+  background-color: var(--color-primary-bg);
+  color: var(--color-primary);
+}
+
+.status-warning {
+  background-color: var(--color-accent-bg);
+  color: var(--color-accent);
+  border: 1px solid var(--color-accent);
+}
+
+/* ----------------------------------------------------
+   9. Right Panel Cards & Layouts
+   ---------------------------------------------------- */
+.card {
+  background: var(--bg-card);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-md);
+  border: 1px solid var(--color-border);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  min-height: 0; /* flex 아이템으로서 강제 확장 제한 및 정합성 보장 */
+}
+
+.card-header {
+  padding: 14px 20px;
+  border-bottom: 1px solid var(--color-border);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background-color: #fafbfa;
+}
+
+.card-title {
+  font-size: 14px;
+  font-weight: 800;
+  color: var(--color-primary);
+}
+
+.card-content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 16px 20px;
+}
+
+/* 분할 높이 카드들 */
+.split-card-top {
+  flex: 6.5;
+}
+.split-card-bottom {
+  flex: 3.5;
+}
+
+/* ----------------------------------------------------
+   10. Inquiry View Elements (기본정보, Canvas 차트, 로그)
+   ---------------------------------------------------- */
+.med-detail-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  align-items: stretch;
+}
+
+.detail-info-table {
+  flex: 1.2;
+  min-width: 280px;
+  border-collapse: collapse;
+}
+
+.detail-info-table th, .detail-info-table td {
+  padding: 8px 12px;
+  font-size: 13px;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.detail-info-table th {
+  font-weight: 700;
+  color: var(--color-text-muted);
+  background-color: var(--bg-primary);
+  width: 35%;
+}
+
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 36px 20px;
+  text-align: center;
+  color: var(--color-text-muted);
+  font-size: 13px;
+  gap: 10px;
+  background-color: var(--bg-primary);
+  border: 1px dashed var(--color-border);
+  border-radius: var(--radius-md);
+  margin: 10px 0;
+  transition: var(--transition-normal);
+}
+
+.empty-state::before {
+  font-size: 32px;
+  margin-bottom: 2px;
+}
+
+#inquiryDetailEmpty::before { content: "🔍"; }
+#inquiryLogsEmpty::before { content: "🕒"; }
+#prescriptionEmpty::before { content: "📋"; }
+#pastPrescriptionsEmpty::before { content: "📜"; }
+#predictEmpty::before { content: "🎉"; }
+#batchEmpty::before { content: "📦"; }
+
+.chart-container {
+  flex: 1;
+  min-width: 240px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background-color: #ffffff;
+  padding: 10px;
+}
+
+.chart-container canvas {
+  width: 100% !important;
+  height: auto !important;
+  max-height: 150px;
+}
+
+.chart-title {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--color-text-muted);
+  margin-bottom: 8px;
+}
+
+/* 로그 테이블 */
+.log-table-wrapper {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  max-height: 180px;
+  overflow-y: auto;
+}
+
+.presc-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+  text-align: left;
+}
+
+.presc-table th, .presc-table td {
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.presc-table th {
+  background-color: var(--bg-primary);
+  color: var(--color-text-muted);
+  font-weight: 700;
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+
+/* ----------------------------------------------------
+   11. Batch Table Input Area (일괄 작업 시트)
+   ---------------------------------------------------- */
+.batch-table-wrapper {
+  flex: 1;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  overflow: auto;
+  margin-bottom: 12px;
+}
+
+.batch-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+.batch-table th, .batch-table td {
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--color-border);
+  text-align: center;
+}
+
+.batch-table th {
+  background-color: var(--bg-primary);
+  font-weight: 700;
+  color: var(--color-text-muted);
+}
+
+.batch-table input {
+  width: 100%;
+  padding: 4px 6px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  font-size: 12px;
+  text-align: center;
+  background-color: var(--bg-primary);
+  transition: var(--transition-fast);
+}
+
+.batch-table input:focus {
+  outline: none;
+  border-color: var(--color-primary-light);
+  background-color: #ffffff;
+}
+
+/* ----------------------------------------------------
+   12. Buttons & Actions
+   ---------------------------------------------------- */
+.btn {
+  padding: 8px 16px;
+  font-size: 12px;
+  font-weight: 700;
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  transition: var(--transition-fast);
+  border: 1px solid var(--color-border);
+  background-color: var(--bg-card);
+  color: var(--color-text-main);
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.btn:hover {
+  background-color: var(--bg-input);
+}
+
+.btn-primary {
+  background-color: var(--color-primary);
+  color: #ffffff;
+  border: none;
+}
+
+.btn-primary:hover {
+  background-color: #1f3f1b;
+}
+
+.btn-accent {
+  background-color: var(--color-accent-bg);
+  color: var(--color-accent);
+  border-color: var(--color-accent);
+}
+
+.btn-accent:hover {
+  background-color: #ffd2d6;
+}
+
+.control-panel {
+  padding: 12px 16px;
+  background-color: var(--bg-primary);
+  border-top: 1px solid var(--color-border);
+  display: flex;
+  gap: 8px;
+}
+
+/* ----------------------------------------------------
+   13. Popup / Overlay Modal (팝업 모달 통합 스타일)
+   ---------------------------------------------------- */
+.popup-overlay, .modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  background-color: rgba(30, 40, 35, 0.4);
+  backdrop-filter: blur(2px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--transition-fast);
+}
+
+.popup-overlay.show, .modal-overlay.show {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.popup-content, .modal-content {
+  background-color: var(--bg-card);
+  border-radius: var(--radius-lg);
+  padding: 24px;
+  width: 340px;
+  box-shadow: var(--shadow-lg);
+  border: 1px solid var(--color-border);
+  transform: scale(0.95);
+  transition: transform var(--transition-fast);
+}
+
+.popup-overlay.show .popup-content, .modal-overlay.show .modal-content {
+  transform: scale(1);
+}
+
+/* ----------------------------------------------------
+   14. Toast / Alerts
+   ---------------------------------------------------- */
+.toast {
+  position: fixed;
+  bottom: 20px;
+  right: 20px;
+  background-color: var(--color-primary);
+  color: #ffffff;
+  padding: 10px 18px;
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-lg);
+  font-size: 12px;
+  font-weight: 700;
+  z-index: 2000;
+  transform: translateY(80px);
+  opacity: 0;
+  transition: transform var(--transition-normal), opacity var(--transition-normal);
+}
+
+.toast.show {
+  transform: translateY(0);
+  opacity: 1;
+}
+
+.toast-error {
+  background-color: var(--color-accent);
+}
+
+/* ----------------------------------------------------
+   15. Meta Input Row
+   ---------------------------------------------------- */
+.presc-meta-row {
+  display: flex;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.input-group {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 6px; /* 라벨과 필드 사이 수직 갭 소폭 벌림 */
+}
+
+.input-group label {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--color-text-muted);
+}
+
+.input-group input, .input-group select {
+  padding: 8px 12px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  font-size: 13px;
+  background-color: var(--bg-input);
+  transition: var(--transition-fast);
+}
+
+.input-group input:focus, .input-group select:focus {
+  outline: none;
+  border-color: var(--color-primary-light);
+  background-color: #ffffff;
+}
+
+/* 팝업 모달 헤더/폼 마진 및 볼드체 개선 */
+.modal-header {
+  font-size: 16px;
+  font-weight: 800; /* 볼드체 강화 */
+  color: var(--color-primary);
+  margin-bottom: 20px; /* 필드들과 여유 공간 확보 */
+  border-bottom: 2px solid var(--bg-primary);
+  padding-bottom: 10px;
+}
+
+.modal-form .input-group {
+  margin-bottom: 14px; /* 수직 필드 간 여백 추가 */
+}
+
+.modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 22px; /* 버튼 상단 마진 추가 */
+}
+
+/* ----------------------------------------------------
+   16. Custom Context Menu
+   ---------------------------------------------------- */
+.context-menu {
+  position: absolute;
+  background-color: var(--bg-card);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-md);
+  z-index: 1000;
+  display: none;
+  flex-direction: column;
+  padding: 4px 0;
+  width: 140px;
+}
+
+.context-menu-item {
+  padding: 8px 12px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-text-main);
+  cursor: pointer;
+  transition: var(--transition-fast);
+}
+
+.context-menu-item:hover {
+  background-color: var(--bg-focus);
+  color: var(--color-primary);
+}

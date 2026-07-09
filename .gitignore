@@ -1,0 +1,17 @@
+# Dependency directories
+node_modules/
+
+# Build outputs
+dist/
+out/
+
+# OS metadata
+.DS_Store
+Thumbs.db
+
+# Databases & local configs
+*.db
+*_mock.json
+
+# User requested exclusion
+test file/
