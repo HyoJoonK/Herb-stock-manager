@@ -16,6 +16,8 @@ jobs:
   build:
     name: Build on ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
+    env:
+      GYP_MSVS_VERSION: 2022
     strategy:
       matrix:
         os: [windows-latest, macos-latest]
