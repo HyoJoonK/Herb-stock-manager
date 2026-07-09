@@ -33,6 +33,15 @@ jobs:
           node-version: '20'
           cache: 'npm'
 
+      - name: Workaround node-gyp VS 18 Enterprise bug
+        if: matrix.os == 'windows-latest'
+        shell: powershell
+        run: |
+          if (Test-Path "C:\Program Files\Microsoft Visual Studio\18") {
+            Write-Host "Renaming VS 18 Enterprise folder to bypass node-gyp bug"
+            Rename-Item -Path "C:\Program Files\Microsoft Visual Studio\18" -NewName "18_backup" -Force
+          }
+
       - name: Setup MSVC Developer Command Prompt
         if: matrix.os == 'windows-latest'
         uses: ilammy/msvc-dev-cmd@v1
