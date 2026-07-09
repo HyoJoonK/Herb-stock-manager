@@ -16,9 +16,6 @@ jobs:
   build:
     name: Build on ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
-    env:
-      GYP_MSVS_VERSION: 2022
-      npm_config_msvs_version: 2022
     strategy:
       matrix:
         os: [windows-latest, macos-latest]
@@ -33,21 +30,13 @@ jobs:
           node-version: '20'
           cache: 'npm'
 
-      - name: Workaround node-gyp VS 18 Enterprise bug
-        if: matrix.os == 'windows-latest'
-        shell: powershell
-        run: |
-          if (Test-Path "C:\Program Files\Microsoft Visual Studio\18") {
-            Write-Host "Renaming VS 18 Enterprise folder to bypass node-gyp bug"
-            Rename-Item -Path "C:\Program Files\Microsoft Visual Studio\18" -NewName "18_backup" -Force
-          }
+      # ignore-scripts 옵션을 사용하여 better-sqlite3 등의 컴파일 단계 에러를 방지합니다.
+      - name: Install dependencies (ignoring scripts)
+        run: npm ci --ignore-scripts
 
-      - name: Setup MSVC Developer Command Prompt
-        if: matrix.os == 'windows-latest'
-        uses: ilammy/msvc-dev-cmd@v1
-
-      - name: Install dependencies
-        run: npm ci
+      # Electron 패키징을 위해 필수적인 Electron 바이너리 빌드 스크립트를 수동으로 실행해 내려받습니다.
+      - name: Download Electron binary
+        run: node node_modules/electron/install.js
 
       # macOS arm64 빌드
       - name: Build Electron app (macOS)
