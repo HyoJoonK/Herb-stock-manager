@@ -36,17 +36,11 @@
       "target": [
         "dmg",
         "zip"
-      ],
-      "arch": [
-        "arm64"
       ]
     },
     "win": {
       "target": [
         "nsis"
-      ],
-      "arch": [
-        "x64"
       ]
     },
     "asar": true
