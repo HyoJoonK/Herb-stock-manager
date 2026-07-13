@@ -194,18 +194,13 @@ class CSVHandler {
       }
     };
 
-    if (dbManager.isMock) {
-      executeImport();
-      successCount = tempSuccessCount;
-    } else {
-      try {
-        const transaction = dbManager.db.transaction(executeImport);
-        transaction();
-        successCount = tempSuccessCount; // 트랜잭션이 성공적으로 끝났을 때만 successCount 할당
-      } catch (err) {
-        errors.push(`대량 적재 중 심각한 트랜잭션 오류: ${err.message}`);
-        successCount = 0; // 오류 시 롤백되므로 성공 수 0으로 초기화
-      }
+    try {
+      const transaction = dbManager.db.transaction(executeImport);
+      transaction();
+      successCount = tempSuccessCount; // 트랜잭션이 성공적으로 끝났을 때만 successCount 할당
+    } catch (err) {
+      errors.push(`대량 적재 중 심각한 트랜잭션 오류: ${err.message}`);
+      successCount = 0; // 오류 시 롤백되므로 성공 수 0으로 초기화
     }
 
     // Supabase 복원 및 일괄 동기화 실행

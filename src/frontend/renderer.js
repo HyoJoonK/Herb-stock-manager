@@ -1134,7 +1134,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (selectedIds.has(id)) {
           item.classList.add('active', 'multi-selected');
         } else {
-          item.classList.remove('multi-selected');
+          item.classList.remove('active', 'multi-selected');
         }
       });
     }
@@ -1384,6 +1384,7 @@ document.addEventListener('DOMContentLoaded', () => {
   // 약재 추가/수정 모달 취소/저장
   document.getElementById('btnEditMedCancel').addEventListener('click', () => {
     document.getElementById('editMedicineModal').classList.remove('show');
+    contextTargetMedId = null;
   });
   document.getElementById('btnEditMedSave').addEventListener('click', handleEditMedSave);
 
@@ -1398,6 +1399,7 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('ctxMenuEdit').addEventListener('click', () => {
     if (contextTargetMedId !== null) {
       openEditMedicineModal(contextTargetMedId);
+      contextTargetMedId = null;
     }
   });
 
@@ -1418,6 +1420,7 @@ document.addEventListener('DOMContentLoaded', () => {
         renderMedicineList();
         renderPredictView();
       }
+      contextTargetMedId = null;
     }
   });
 
@@ -1427,6 +1430,7 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('ctxPrescEdit').addEventListener('click', () => {
     if (contextTargetPrescId !== null) {
       enterPrescriptionEditMode(contextTargetPrescId);
+      contextTargetPrescId = null;
     }
   });
 
@@ -1449,6 +1453,7 @@ document.addEventListener('DOMContentLoaded', () => {
           alert(`처방 삭제 실패: ${err.message}`);
         }
       }
+      contextTargetPrescId = null;
     }
   });
 

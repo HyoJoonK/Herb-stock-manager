@@ -469,7 +469,7 @@ class QuickSearchEngine {
       if (this.selectedIds.has(id)) {
         item.classList.add('active', 'multi-selected');
       } else {
-        item.classList.remove('multi-selected');
+        item.classList.remove('active', 'multi-selected');
       }
     });
   }
