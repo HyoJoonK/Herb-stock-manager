@@ -336,12 +336,16 @@ function drawUsageChart(canvasId, medId) {
   if (!canvas) return;
   const ctx = canvas.getContext('2d');
   
-  // Canvas 해상도 선명화 처리
+  // Canvas 해상도 선명화 처리 (크기 변화 시에만 GPU 메모리 재할당)
   const dpr = window.devicePixelRatio || 1;
   const rect = canvas.getBoundingClientRect();
-  canvas.width = rect.width * dpr;
-  canvas.height = rect.height * dpr;
-  ctx.scale(dpr, dpr);
+  const expectedWidth = rect.width * dpr;
+  const expectedHeight = rect.height * dpr;
+  if (canvas.width !== expectedWidth || canvas.height !== expectedHeight) {
+    canvas.width = expectedWidth;
+    canvas.height = expectedHeight;
+    ctx.scale(dpr, dpr);
+  }
 
   const width = rect.width;
   const height = rect.height;
@@ -500,33 +504,22 @@ function renderPrescription() {
 
   currentPrescriptionItems.forEach((item, index) => {
     const tr = document.createElement('tr');
+    tr.dataset.index = index; // 인덱스를 dataset으로 설정
     tr.innerHTML = `
       <td style="font-weight:700; color:var(--color-primary);">${item.name}</td>
       <td style="color:var(--color-text-muted);">${item.pack_size}g 기준</td>
       <td>
         <input type="number" value="${item.amount}" min="0.1" step="0.1" 
-               style="width: 70px; padding: 4px; border: 1px solid var(--color-border); border-radius: 4px; text-align: center;"
-               onchange="updatePrescriptionItemAmount(${index}, this.value)"> g
+               class="presc-item-amount-input"
+               style="width: 70px; padding: 4px; border: 1px solid var(--color-border); border-radius: 4px; text-align: center;"> g
       </td>
       <td style="text-align: center;">
-        <span class="presc-remove" onclick="removePrescriptionItem(${index})" style="cursor:pointer;">❌</span>
+        <span class="presc-remove-btn" style="cursor:pointer;">❌</span>
       </td>
     `;
     tbody.appendChild(tr);
   });
 }
-
-window.updatePrescriptionItemAmount = function(index, value) {
-  const val = parseFloat(value);
-  if (!isNaN(val) && val > 0) {
-    currentPrescriptionItems[index].amount = val;
-  }
-};
-
-window.removePrescriptionItem = function(index) {
-  currentPrescriptionItems.splice(index, 1);
-  renderPrescription();
-};
 
 /**
  * 과거 전체 처방 기록 완료 이력 렌더링
@@ -714,17 +707,12 @@ function renderBatchTable() {
       <td><input type="number" class="batch-safety" value="${item.safety_stock}" min="0" step="10"></td>
       <td><input type="text" class="batch-unit" value="${item.unit}" style="width:40px;"></td>
       <td>
-        <span style="cursor:pointer;" onclick="removeBatchItem(${id})">❌</span>
+        <span class="batch-remove-btn" style="cursor:pointer;">❌</span>
       </td>
     `;
     tbody.appendChild(tr);
   });
 }
-
-window.removeBatchItem = function(id) {
-  batchEditItems.delete(id);
-  renderBatchTable();
-};
 
 /**
  * 일괄 작업 내용 DB 일괄 업데이트 실행
@@ -945,9 +933,23 @@ function handleEditMedSave() {
 // ----------------------------------------------------
 function showContextMenu(x, y) {
   const menu = document.getElementById('medContextMenu');
+  menu.style.display = 'flex';
+  
+  // 화면 경계 이탈을 방지하기 위해 너비/높이 획득 후 보정
+  const menuWidth = menu.offsetWidth || 140;
+  const menuHeight = menu.offsetHeight || 80;
+  const windowWidth = window.innerWidth;
+  const windowHeight = window.innerHeight;
+
+  if (x + menuWidth > windowWidth) {
+    x = windowWidth - menuWidth - 10;
+  }
+  if (y + menuHeight > windowHeight) {
+    y = windowHeight - menuHeight - 10;
+  }
+
   menu.style.left = `${x}px`;
   menu.style.top = `${y}px`;
-  menu.style.display = 'flex';
   
   // 다른 곳 클릭 시 메뉴 숨기기 위해 글로벌 리스너 연결
   const hideMenu = () => {
@@ -980,6 +982,42 @@ function showToast(message, isError = false) {
 // ----------------------------------------------------
 document.addEventListener('DOMContentLoaded', () => {
   initDatabase();
+
+  // 처방 바구니 테이블 이벤트 위임 바인딩
+  const prescTbody = document.getElementById('prescriptionBody');
+  if (prescTbody) {
+    prescTbody.addEventListener('change', (e) => {
+      if (e.target.classList.contains('presc-item-amount-input')) {
+        const tr = e.target.closest('tr');
+        const index = parseInt(tr.dataset.index);
+        const val = parseFloat(e.target.value);
+        if (!isNaN(val) && val > 0) {
+          currentPrescriptionItems[index].amount = val;
+        }
+      }
+    });
+    prescTbody.addEventListener('click', (e) => {
+      if (e.target.classList.contains('presc-remove-btn')) {
+        const tr = e.target.closest('tr');
+        const index = parseInt(tr.dataset.index);
+        currentPrescriptionItems.splice(index, 1);
+        renderPrescription();
+      }
+    });
+  }
+
+  // 일괄 작업 편집 테이블 이벤트 위임 바인딩
+  const batchTbody = document.getElementById('batchTableBody');
+  if (batchTbody) {
+    batchTbody.addEventListener('click', (e) => {
+      if (e.target.classList.contains('batch-remove-btn')) {
+        const tr = e.target.closest('tr');
+        const id = parseInt(tr.dataset.id);
+        batchEditItems.delete(id);
+        renderBatchTable();
+      }
+    });
+  }
 
   const searchInput = document.getElementById('inquirySearchInput'); // 초기 포커스 대행
   const mainTabs = document.getElementById('mainTabs');

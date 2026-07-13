@@ -34,31 +34,50 @@ class CSVHandler {
   }
 
   /**
-   * CSV 텍스트 한 행을 파싱하는 RFC 4180 준수 파서
+   * RFC 4180 규격을 엄격히 준수하여 전체 CSV 텍스트를 2차원 배열로 파싱합니다.
+   * 셀 내부에 개행 문자(\n)나 쉼표(,)가 큰따옴표(")로 감싸진 경우를 올바르게 처리합니다.
    */
-  static parseCSVLine(line) {
+  static parseCSV(csvContent) {
     const result = [];
+    let row = [];
     let current = '';
     let inQuotes = false;
 
-    for (let i = 0; i < line.length; i++) {
-      const char = line[i];
+    if (!csvContent) return result;
+
+    for (let i = 0; i < csvContent.length; i++) {
+      const char = csvContent[i];
+      const nextChar = csvContent[i + 1];
+
       if (char === '"') {
-        if (inQuotes && line[i + 1] === '"') {
+        if (inQuotes && nextChar === '"') {
           current += '"';
           i++;
         } else {
           inQuotes = !inQuotes;
         }
       } else if (char === ',' && !inQuotes) {
-        result.push(current.trim());
+        row.push(current.trim());
+        current = '';
+      } else if ((char === '\r' || char === '\n') && !inQuotes) {
+        if (char === '\r' && nextChar === '\n') {
+          i++;
+        }
+        row.push(current.trim());
+        result.push(row);
+        row = [];
         current = '';
       } else {
         current += char;
       }
     }
-    result.push(current.trim());
-    return result;
+
+    if (current || row.length > 0) {
+      row.push(current.trim());
+      result.push(row);
+    }
+
+    return result.filter(r => r.length > 0 && (r.length > 1 || r[0] !== ''));
   }
 
   /**
@@ -67,15 +86,14 @@ class CSVHandler {
    * @param {InventoryManager} dbManager 
    */
   static importFromCSV(csvContent, dbManager) {
-    const lines = csvContent.split(/\r?\n/);
-    if (lines.length === 0 || (lines.length === 1 && !lines[0].trim())) {
+    const rows = this.parseCSV(csvContent);
+    if (rows.length === 0) {
       return { successCount: 0, skipCount: 0, errors: ['불러올 데이터가 없습니다.'] };
     }
 
-    // 첫 번째 줄이 헤더인지 판단 (약재명, 카테고리 등 주요 키워드 매칭)
-    const firstLineColumns = this.parseCSVLine(lines[0]);
+    const firstRow = rows[0];
     const headerKeywords = ['약재명', '약재', '이름', 'name', '카테고리', '규격', '단위', '잔량', '재고'];
-    const isHeader = firstLineColumns.some(col => 
+    const isHeader = firstRow.some(col => 
       headerKeywords.some(keyword => col.toLowerCase().includes(keyword))
     );
 
@@ -94,81 +112,104 @@ class CSVHandler {
 
     const startIndex = isHeader ? 1 : 0;
 
-    for (let i = startIndex; i < lines.length; i++) {
-      const line = lines[i].trim();
-      if (!line) continue;
+    // 성능 최적화: Supabase 동기화 임시 비활성화 및 로컬 SQLite 트랜잭션 사용
+    const originalSupabase = dbManager.supabase;
+    dbManager.supabase = null; // 대량 적재 도중 비동기 개별 업로드 방지
 
-      const columns = this.parseCSVLine(line);
+    const executeImport = () => {
+      for (let i = startIndex; i < rows.length; i++) {
+        const columns = rows[i];
+        if (columns.length === 0 || (columns.length === 1 && !columns[0])) continue;
 
-      // A 컬럼: 약재명 - 필수
-      const name = columns[0] ? columns[0].trim() : '';
-      if (!name) {
-        errors.push(`행 ${i + 1} [약재명 누락]: 약재명이 비어 있어 행을 건너뛰었습니다.`);
-        skipCount++;
-        continue;
+        // A 컬럼: 약재명 - 필수
+        const name = columns[0] ? columns[0].trim() : '';
+        if (!name) {
+          errors.push(`행 ${i + 1} [약재명 누락]: 약재명이 비어 있어 행을 건너뛰었습니다.`);
+          skipCount++;
+          continue;
+        }
+
+        if (insertedNames.has(name)) {
+          errors.push(`행 ${i + 1} [중복 스킵]: 약재명 "${name}"은(는) 이미 등록되어 있어 무시되었습니다.`);
+          skipCount++;
+          continue;
+        }
+
+        // B 컬럼: 카테고리 - 없으면 '미분류'
+        const categoryName = (columns[1] ? columns[1].trim() : '') || '미분류';
+        
+        // 카테고리 DB 동적 추가 및 ID 획득
+        let categoryId = 1;
+        try {
+          categoryId = dbManager.addCategory(categoryName);
+        } catch (catErr) {
+          console.warn(`카테고리 "${categoryName}" 등록 실패, 미분류(ID 1)로 대체합니다.`, catErr);
+        }
+
+        // C 컬럼: 팩 규격 - 없거나 0 이하면 기본 규격 500g 적용
+        const rawPackSize = columns[2] ? columns[2].trim() : '';
+        let packSize = this.cleanNumber(rawPackSize);
+        if (packSize <= 0) {
+          packSize = 500;
+        }
+
+        // D 컬럼: 미개봉 팩 수
+        const rawUnopened = columns[3] ? columns[3].trim() : '';
+        const unopenedPacks = rawUnopened === '' ? 0 : Math.floor(this.cleanNumber(rawUnopened));
+
+        // E 컬럼: 개봉 팩 잔량
+        const rawRemain = columns[4] ? columns[4].trim() : '';
+        let openedPackRemain = rawRemain === '' ? 0 : this.cleanNumber(rawRemain);
+
+        // 잔량이 규격을 초과하면 팩 규격으로 강제 조정
+        if (openedPackRemain > packSize) {
+          openedPackRemain = packSize;
+        }
+
+        // F 컬럼: 안전 재고 수준 - 없으면 기본값 500g
+        const rawSafety = columns[5] ? columns[5].trim() : '';
+        const safetyStock = rawSafety === '' ? 500 : this.cleanNumber(rawSafety);
+
+        // G 컬럼: 표시 단위
+        const unit = (columns[6] ? columns[6].trim() : '') || 'g';
+
+        try {
+          dbManager.addMedicine({
+            name,
+            category_id: categoryId,
+            pack_size: packSize,
+            unopened_packs: unopenedPacks,
+            opened_pack_remain: openedPackRemain,
+            safety_stock: safetyStock,
+            unit
+          });
+
+          insertedNames.add(name);
+          successCount++;
+        } catch (err) {
+          errors.push(`행 ${i + 1} [DB 오류]: ${err.message}`);
+          skipCount++;
+        }
       }
+    };
 
-      if (insertedNames.has(name)) {
-        errors.push(`행 ${i + 1} [중복 스킵]: 약재명 "${name}"은(는) 이미 등록되어 있어 무시되었습니다.`);
-        skipCount++;
-        continue;
-      }
-
-      // B 컬럼: 카테고리 - 없으면 '미분류'
-      const categoryName = (columns[1] ? columns[1].trim() : '') || '미분류';
-      
-      // 카테고리 DB 동적 추가 및 ID 획득
-      let categoryId = 1;
+    if (dbManager.isMock) {
+      executeImport();
+    } else {
       try {
-        categoryId = dbManager.addCategory(categoryName);
-      } catch (catErr) {
-        console.warn(`카테고리 "${categoryName}" 등록 실패, 미분류(ID 1)로 대체합니다.`, catErr);
-      }
-
-      // C 컬럼: 팩 규격 - 없거나 0 이하면 기본 규격 500g 적용
-      const rawPackSize = columns[2] ? columns[2].trim() : '';
-      let packSize = this.cleanNumber(rawPackSize);
-      if (packSize <= 0) {
-        packSize = 500;
-      }
-
-      // D 컬럼: 미개봉 팩 수
-      const rawUnopened = columns[3] ? columns[3].trim() : '';
-      const unopenedPacks = rawUnopened === '' ? 0 : Math.floor(this.cleanNumber(rawUnopened));
-
-      // E 컬럼: 개봉 팩 잔량
-      const rawRemain = columns[4] ? columns[4].trim() : '';
-      let openedPackRemain = rawRemain === '' ? 0 : this.cleanNumber(rawRemain);
-
-      // 잔량이 규격을 초과하면 팩 규격으로 강제 조정
-      if (openedPackRemain > packSize) {
-        openedPackRemain = packSize;
-      }
-
-      // F 컬럼: 안전 재고 수준 - 없으면 기본값 500g
-      const rawSafety = columns[5] ? columns[5].trim() : '';
-      const safetyStock = rawSafety === '' ? 500 : this.cleanNumber(rawSafety);
-
-      // G 컬럼: 표시 단위
-      const unit = (columns[6] ? columns[6].trim() : '') || 'g';
-
-      try {
-        dbManager.addMedicine({
-          name,
-          category_id: categoryId,
-          pack_size: packSize,
-          unopened_packs: unopenedPacks,
-          opened_pack_remain: openedPackRemain,
-          safety_stock: safetyStock,
-          unit
-        });
-
-        insertedNames.add(name);
-        successCount++;
+        const transaction = dbManager.db.transaction(executeImport);
+        transaction();
       } catch (err) {
-        errors.push(`행 ${i + 1} [DB 오류]: ${err.message}`);
-        skipCount++;
+        errors.push(`대량 적재 중 심각한 트랜잭션 오류: ${err.message}`);
       }
+    }
+
+    // Supabase 복원 및 일괄 동기화 실행
+    dbManager.supabase = originalSupabase;
+    if (dbManager.supabase && successCount > 0) {
+      dbManager.syncAll().catch(syncErr => {
+        console.error('CSV 임포트 후 일괄 동기화 실패:', syncErr);
+      });
     }
 
     return {

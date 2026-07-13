@@ -56,7 +56,7 @@ class SmartPredictor {
         SELECT medicine_id, SUM(ABS(quantity)) as total_consumed
         FROM stock_logs
         WHERE type = 'CONSUME'
-          AND timestamp >= datetime('now', '-' || ? || ' days', 'localtime')
+          AND timestamp >= datetime('now', '-' || ? || ' days')
         GROUP BY medicine_id
       `;
       try {

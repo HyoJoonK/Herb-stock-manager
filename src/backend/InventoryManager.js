@@ -485,11 +485,11 @@ class InventoryManager {
   }
 
   /**
-   * 전체 양방향 동기화 작업 (Last-Write-Wins 타임스탬프 비교 기반)
+   * 전체 양방향 동기화 작업 (Last-Write-Wins 타임스탬프 비교 기반) - 벌크(Bulk) 처리 최적화 적용
    */
   async syncAll() {
     if (!this.supabase || this.isMock) return;
-    console.log('[Supabase Sync] 양방향 전체 동기화를 시작합니다...');
+    console.log('[Supabase Sync] 양방향 전체 동기화를 시작합니다 (벌크 최적화)...');
 
     try {
       // ==========================================
@@ -509,32 +509,47 @@ class InventoryManager {
 
       const remoteCatsMap = new Map(remoteCats.map(c => [c.id, c]));
 
-      // 로컬 -> 원격
+      // 로컬 -> 원격 (일괄 Upsert 대상 수집)
+      const catsToRemote = [];
       for (const lc of localCats) {
         const rc = remoteCatsMap.get(lc.id);
         const localTime = new Date(lc.updated_at).getTime();
         
         if (!rc || localTime > new Date(rc.updated_at).getTime()) {
-          const payload = {
+          catsToRemote.push({
             id: lc.id,
             name: lc.name,
             updated_at: this.parseSqliteTime(lc.updated_at)
-          };
-          await this.supabase.from('categories').upsert(payload);
+          });
         }
       }
+      if (catsToRemote.length > 0) {
+        const { error: upsertErr } = await this.supabase.from('categories').upsert(catsToRemote);
+        if (upsertErr) throw upsertErr;
+        console.log(`[Supabase Sync] categories ${catsToRemote.length}건 업로드 성공.`);
+      }
 
-      // 원격 -> 로컬
+      // 원격 -> 로컬 (트랜잭션 일괄 적용)
       const localCatsMap = new Map(localCats.map(c => [c.id, c]));
+      const catsToLocal = [];
       for (const rc of remoteCats) {
         const lc = localCatsMap.get(rc.id);
         const remoteTime = new Date(rc.updated_at).getTime();
 
         if (!lc || remoteTime > new Date(lc.updated_at).getTime()) {
-          const sqliteTime = this.formatToSqliteTime(rc.updated_at);
-          this.db.prepare('INSERT OR REPLACE INTO categories (id, name, updated_at) VALUES (?, ?, ?)')
-            .run(rc.id, rc.name, sqliteTime);
+          catsToLocal.push(rc);
         }
+      }
+      if (catsToLocal.length > 0) {
+        const transaction = this.db.transaction(() => {
+          const stmt = this.db.prepare('INSERT OR REPLACE INTO categories (id, name, updated_at) VALUES (?, ?, ?)');
+          for (const rc of catsToLocal) {
+            const sqliteTime = this.formatToSqliteTime(rc.updated_at);
+            stmt.run(rc.id, rc.name, sqliteTime);
+          }
+        });
+        transaction();
+        console.log(`[Supabase Sync] categories ${catsToLocal.length}건 다운로드 적용 완료.`);
       }
 
       // ==========================================
@@ -546,13 +561,14 @@ class InventoryManager {
 
       const remoteMedsMap = new Map(remoteMeds.map(m => [m.id, m]));
 
-      // 로컬 -> 원격
+      // 로컬 -> 원격 (일괄 Upsert 대상 수집)
+      const medsToRemote = [];
       for (const lm of localMeds) {
         const rm = remoteMedsMap.get(lm.id);
         const localTime = new Date(lm.updated_at).getTime();
 
         if (!rm || localTime > new Date(rm.updated_at).getTime()) {
-          const payload = {
+          medsToRemote.push({
             id: lm.id,
             name: lm.name,
             category_id: lm.category_id,
@@ -562,24 +578,39 @@ class InventoryManager {
             safety_stock: lm.safety_stock,
             unit: lm.unit,
             updated_at: this.parseSqliteTime(lm.updated_at)
-          };
-          await this.supabase.from('medicines').upsert(payload);
+          });
         }
       }
+      if (medsToRemote.length > 0) {
+        const { error: upsertErr } = await this.supabase.from('medicines').upsert(medsToRemote);
+        if (upsertErr) throw upsertErr;
+        console.log(`[Supabase Sync] medicines ${medsToRemote.length}건 업로드 성공.`);
+      }
 
-      // 원격 -> 로컬
+      // 원격 -> 로컬 (트랜잭션 일괄 적용)
       const localMedsMap = new Map(localMeds.map(m => [m.id, m]));
+      const medsToLocal = [];
       for (const rm of remoteMeds) {
         const lm = localMedsMap.get(rm.id);
         const remoteTime = new Date(rm.updated_at).getTime();
 
         if (!lm || remoteTime > new Date(lm.updated_at).getTime()) {
-          const sqliteTime = this.formatToSqliteTime(rm.updated_at);
-          this.db.prepare(`
+          medsToLocal.push(rm);
+        }
+      }
+      if (medsToLocal.length > 0) {
+        const transaction = this.db.transaction(() => {
+          const stmt = this.db.prepare(`
             INSERT OR REPLACE INTO medicines (id, name, category_id, pack_size, unopened_packs, opened_pack_remain, safety_stock, unit, updated_at)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-          `).run(rm.id, rm.name, rm.category_id, rm.pack_size, rm.unopened_packs, rm.opened_pack_remain, rm.safety_stock, rm.unit, sqliteTime);
-        }
+          `);
+          for (const rm of medsToLocal) {
+            const sqliteTime = this.formatToSqliteTime(rm.updated_at);
+            stmt.run(rm.id, rm.name, rm.category_id, rm.pack_size, rm.unopened_packs, rm.opened_pack_remain, rm.safety_stock, rm.unit, sqliteTime);
+          }
+        });
+        transaction();
+        console.log(`[Supabase Sync] medicines ${medsToLocal.length}건 다운로드 적용 완료.`);
       }
 
       // ==========================================
@@ -591,11 +622,13 @@ class InventoryManager {
 
       const remotePrescsMap = new Map(remotePrescs.map(p => [p.id, p]));
 
-      // 로컬 -> 원격
+      // 로컬 -> 원격 (처방 이력은 덮어쓰기 없이 단방향 insert 혹은 누락분 보강)
+      const prescsToRemote = [];
+      const prescItemsToRemote = [];
       for (const lp of localPrescs) {
         const rp = remotePrescsMap.get(lp.id);
         if (!rp) {
-          const payload = {
+          prescsToRemote.push({
             id: lp.id,
             prescription_name: lp.prescription_name,
             patient_name: lp.patient_name,
@@ -603,41 +636,65 @@ class InventoryManager {
             note: lp.note,
             created_at: this.parseSqliteTime(lp.created_at),
             updated_at: this.parseSqliteTime(lp.updated_at)
-          };
-          await this.supabase.from('prescriptions').insert(payload);
+          });
           
-          // 동반되는 prescription_items도 업로드
+          // 동반 아이템 수집
           const items = this.db.prepare('SELECT * FROM prescription_items WHERE prescription_id = ?').all(lp.id);
           if (items && items.length > 0) {
-            await this.supabase.from('prescription_items').upsert(items);
+            prescItemsToRemote.push(...items);
           }
         }
       }
+      if (prescsToRemote.length > 0) {
+        const { error: insErr } = await this.supabase.from('prescriptions').insert(prescsToRemote);
+        if (insErr) throw insErr;
+        console.log(`[Supabase Sync] prescriptions ${prescsToRemote.length}건 업로드 성공.`);
+      }
+      if (prescItemsToRemote.length > 0) {
+        const { error: insErr } = await this.supabase.from('prescription_items').upsert(prescItemsToRemote);
+        if (insErr) throw insErr;
+        console.log(`[Supabase Sync] prescription_items ${prescItemsToRemote.length}건 업로드 성공.`);
+      }
 
-      // 원격 -> 로컬
+      // 원격 -> 로컬 (누락 처방 정보 다운로드)
       const localPrescsMap = new Map(localPrescs.map(p => [p.id, p]));
+      const prescsToLocal = [];
       for (const rp of remotePrescs) {
         const lp = localPrescsMap.get(rp.id);
         if (!lp) {
-          const cTime = this.formatToSqliteTime(rp.created_at);
-          const uTime = this.formatToSqliteTime(rp.updated_at);
-          this.db.prepare(`
+          prescsToLocal.push(rp);
+        }
+      }
+      if (prescsToLocal.length > 0) {
+        const transaction = this.db.transaction(() => {
+          const stmt = this.db.prepare(`
             INSERT INTO prescriptions (id, prescription_name, patient_name, total_items, note, created_at, updated_at)
             VALUES (?, ?, ?, ?, ?, ?, ?)
-          `).run(rp.id, rp.prescription_name, rp.patient_name, rp.total_items, rp.note, cTime, uTime);
+          `);
+          for (const rp of prescsToLocal) {
+            const cTime = this.formatToSqliteTime(rp.created_at);
+            const uTime = this.formatToSqliteTime(rp.updated_at);
+            stmt.run(rp.id, rp.prescription_name, rp.patient_name, rp.total_items, rp.note, cTime, uTime);
+          }
+        });
+        transaction();
 
-          // 원격에서 prescription_items 내려받아 저장
-          const { data: rItems } = await this.supabase.from('prescription_items').select('*').eq('prescription_id', rp.id);
-          if (rItems && rItems.length > 0) {
-            const insItem = this.db.prepare(`
+        // 원격에서 누락 처방 품목도 다운로드
+        const ids = prescsToLocal.map(p => p.id);
+        const { data: rItems, error: rItemsErr } = await this.supabase.from('prescription_items').select('*').in('prescription_id', ids);
+        if (!rItemsErr && rItems && rItems.length > 0) {
+          const itemTx = this.db.transaction(() => {
+            const itemStmt = this.db.prepare(`
               INSERT OR REPLACE INTO prescription_items (id, prescription_id, medicine_id, amount)
               VALUES (?, ?, ?, ?)
             `);
             for (const rit of rItems) {
-              insItem.run(rit.id, rit.prescription_id, rit.medicine_id, rit.amount);
+              itemStmt.run(rit.id, rit.prescription_id, rit.medicine_id, rit.amount);
             }
-          }
+          });
+          itemTx();
         }
+        console.log(`[Supabase Sync] prescriptions ${prescsToLocal.length}건 및 하위 품목 다운로드 완료.`);
       }
 
       // ==========================================
@@ -650,10 +707,11 @@ class InventoryManager {
       const remoteLogsMap = new Map(remoteLogs.map(l => [l.id, l]));
 
       // 로컬 -> 원격
+      const logsToRemote = [];
       for (const ll of localLogs) {
         const rl = remoteLogsMap.get(ll.id);
         if (!rl) {
-          const payload = {
+          logsToRemote.push({
             id: ll.id,
             medicine_id: ll.medicine_id,
             type: ll.type,
@@ -661,25 +719,40 @@ class InventoryManager {
             timestamp: this.parseSqliteTime(ll.timestamp),
             prescription_id: ll.prescription_id,
             note: ll.note
-          };
-          await this.supabase.from('stock_logs').insert(payload);
+          });
         }
+      }
+      if (logsToRemote.length > 0) {
+        const { error: insErr } = await this.supabase.from('stock_logs').insert(logsToRemote);
+        if (insErr) throw insErr;
+        console.log(`[Supabase Sync] stock_logs ${logsToRemote.length}건 업로드 성공.`);
       }
 
       // 원격 -> 로컬
       const localLogsMap = new Map(localLogs.map(l => [l.id, l]));
+      const logsToLocal = [];
       for (const rl of remoteLogs) {
         const ll = localLogsMap.get(rl.id);
         if (!ll) {
-          const sTime = this.formatToSqliteTime(rl.timestamp);
-          this.db.prepare(`
-            INSERT INTO stock_logs (id, medicine_id, type, quantity, timestamp, prescription_id, note)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-          `).run(rl.id, rl.medicine_id, rl.type, rl.quantity, sTime, rl.prescription_id, rl.note);
+          logsToLocal.push(rl);
         }
       }
+      if (logsToLocal.length > 0) {
+        const transaction = this.db.transaction(() => {
+          const stmt = this.db.prepare(`
+            INSERT INTO stock_logs (id, medicine_id, type, quantity, timestamp, prescription_id, note)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+          `);
+          for (const rl of logsToLocal) {
+            const sTime = this.formatToSqliteTime(rl.timestamp);
+            stmt.run(rl.id, rl.medicine_id, rl.type, rl.quantity, sTime, rl.prescription_id, rl.note);
+          }
+        });
+        transaction();
+        console.log(`[Supabase Sync] stock_logs ${logsToLocal.length}건 다운로드 완료.`);
+      }
 
-      console.log('[Supabase Sync] 양방향 동기화 완료!');
+      console.log('[Supabase Sync] 양방향 전체 벌크 동기화 완료!');
     } catch (err) {
       console.error('[Supabase Sync] 동기화 오류 발생:', err);
     }
@@ -988,50 +1061,99 @@ class InventoryManager {
   // 기존 재고 제어 비즈니스 로직
   // ==========================================
 
+  /**
+   * 트랜잭션을 시작하지 않는 순수 로컬 SQLite 차감 메서드 (중첩 트랜잭션 방지용)
+   */
+  consumeStockLocally(medicineId, consumeGrams, prescriptionId = null, note = '') {
+    const med = this.db.prepare('SELECT * FROM medicines WHERE id = ?').get(medicineId);
+    if (!med) throw new Error('약재를 찾을 수 없습니다.');
+
+    const { unopened_packs, pack_size, opened_pack_remain } = med;
+    const totalStock = (unopened_packs * pack_size) + opened_pack_remain;
+
+    if (totalStock < consumeGrams) {
+      throw new Error(`재고가 부족합니다. (필요: ${consumeGrams}g, 현재: ${totalStock}g)`);
+    }
+
+    let currentRemain = opened_pack_remain;
+    let currentUnopened = unopened_packs;
+    let needed = consumeGrams;
+
+    if (currentRemain >= needed) {
+      currentRemain -= needed;
+      needed = 0;
+    } else {
+      needed -= currentRemain;
+      currentRemain = 0;
+
+      const packsToOpen = Math.ceil(needed / pack_size);
+      if (currentUnopened < packsToOpen) {
+        throw new Error('데이터 정합성 이상: 총 재고가 필요한데 팩 개수가 모자랍니다.');
+      }
+
+      currentUnopened -= packsToOpen;
+      currentRemain = (packsToOpen * pack_size) - needed;
+      needed = 0;
+    }
+
+    this.db.prepare(`
+      UPDATE medicines 
+      SET unopened_packs = ?, opened_pack_remain = ?
+      WHERE id = ?
+    `).run(currentUnopened, currentRemain, medicineId);
+
+    const resLog = this.db.prepare(`
+      INSERT INTO stock_logs (medicine_id, type, quantity, timestamp, prescription_id, note)
+      VALUES (?, 'CONSUME', ?, datetime('now', 'utc'), ?, ?)
+    `).run(medicineId, -consumeGrams, prescriptionId, note || '처방 소모');
+    
+    return resLog.lastInsertRowid;
+  }
+
   consumeStock(medicineId, consumeGrams, prescriptionId = null, note = '') {
     if (consumeGrams <= 0) {
       throw new Error('소모량은 0보다 커야 합니다.');
     }
 
-    const execute = (med) => {
-      const { unopened_packs, pack_size, opened_pack_remain } = med;
-      const totalStock = (unopened_packs * pack_size) + opened_pack_remain;
-
-      if (totalStock < consumeGrams) {
-        throw new Error(`재고가 부족합니다. (필요: ${consumeGrams}g, 현재: ${totalStock}g)`);
-      }
-
-      let currentRemain = opened_pack_remain;
-      let currentUnopened = unopened_packs;
-      let needed = consumeGrams;
-
-      if (currentRemain >= needed) {
-        currentRemain -= needed;
-        needed = 0;
-      } else {
-        needed -= currentRemain;
-        currentRemain = 0;
-
-        const packsToOpen = Math.ceil(needed / pack_size);
-        if (currentUnopened < packsToOpen) {
-          throw new Error('데이터 정합성 이상: 총 재고가 필요한데 팩 개수가 모자랍니다.');
-        }
-
-        currentUnopened -= packsToOpen;
-        currentRemain = (packsToOpen * pack_size) - needed;
-        needed = 0;
-      }
-
-      return {
-        unopened_packs: currentUnopened,
-        opened_pack_remain: currentRemain
-      };
-    };
-
     if (this.isMock) {
       const idx = this.mockData.medicines.findIndex(m => m.id === medicineId);
       if (idx === -1) throw new Error('약재를 찾을 수 없습니다.');
       
+      const execute = (med) => {
+        const { unopened_packs, pack_size, opened_pack_remain } = med;
+        const totalStock = (unopened_packs * pack_size) + opened_pack_remain;
+
+        if (totalStock < consumeGrams) {
+          throw new Error(`재고가 부족합니다. (필요: ${consumeGrams}g, 현재: ${totalStock}g)`);
+        }
+
+        let currentRemain = opened_pack_remain;
+        let currentUnopened = unopened_packs;
+        let needed = consumeGrams;
+
+        if (currentRemain >= needed) {
+          currentRemain -= needed;
+          needed = 0;
+        } else {
+          needed -= currentRemain;
+          currentRemain = 0;
+
+          const packsToOpen = Math.ceil(needed / pack_size);
+          if (currentUnopened < packsToOpen) {
+            throw new Error('데이터 정합성 이상: 총 재고가 필요한데 팩 개수가 모자랍니다.');
+          }
+
+          currentUnopened -= packsToOpen;
+          currentRemain = (packsToOpen * pack_size) - needed;
+          needed = 0;
+        }
+
+        return {
+          unopened_packs: currentUnopened,
+          opened_pack_remain: currentRemain
+        };
+      };
+
       const newStock = execute(this.mockData.medicines[idx]);
       
       this.mockData.medicines[idx].unopened_packs = newStock.unopened_packs;
@@ -1052,27 +1174,11 @@ class InventoryManager {
     } else {
       let logId = 0;
       const transaction = this.db.transaction(() => {
-        const med = this.db.prepare('SELECT * FROM medicines WHERE id = ?').get(medicineId);
-        if (!med) throw new Error('약재를 찾을 수 없습니다.');
-
-        const newStock = execute(med);
-
-        this.db.prepare(`
-          UPDATE medicines 
-          SET unopened_packs = ?, opened_pack_remain = ?
-          WHERE id = ?
-        `).run(newStock.unopened_packs, newStock.opened_pack_remain, medicineId);
-
-        const resLog = this.db.prepare(`
-          INSERT INTO stock_logs (medicine_id, type, quantity, timestamp, prescription_id, note)
-          VALUES (?, 'CONSUME', ?, datetime('now', 'utc'), ?, ?)
-        `).run(medicineId, -consumeGrams, prescriptionId, note || '처방 소모');
-        logId = resLog.lastInsertRowid;
+        logId = this.consumeStockLocally(medicineId, consumeGrams, prescriptionId, note);
       });
-
       transaction();
 
-      // Supabase 동기화 트리거 (비동기)
+      // Supabase 동기화 트리거 (비동기) - 트랜잭션 외부 호출로 격리
       this.updateUpdatedAt('medicines', medicineId);
       this.syncItemToSupabase('medicines', medicineId);
       if (logId > 0) {
@@ -1142,18 +1248,19 @@ class InventoryManager {
           this.db.prepare('UPDATE medicines SET unopened_packs = ?, opened_pack_remain = ? WHERE id = ?')
             .run(newPacks, newRemain, medicineId);
           needMedUpdate = true;
-        } else if (type === 'WASTE') {
-          this.consumeStock(medicineId, Math.abs(quantity), null, note || '재고 폐기');
-          return;
-        }
 
-        const resLog = this.db.prepare('INSERT INTO stock_logs (medicine_id, type, quantity, timestamp, note) VALUES (?, ?, ?, datetime(\'now\', \'utc\'), ?)')
-          .run(medicineId, type, quantity, note);
-        logId = resLog.lastInsertRowid;
+          const resLog = this.db.prepare('INSERT INTO stock_logs (medicine_id, type, quantity, timestamp, note) VALUES (?, ?, ?, datetime(\'now\', \'utc\'), ?)')
+            .run(medicineId, type, quantity, note);
+          logId = resLog.lastInsertRowid;
+        } else if (type === 'WASTE') {
+          // 중첩 트랜잭션 방지 위해 로컬 차감 함수 호출
+          logId = this.consumeStockLocally(medicineId, Math.abs(quantity), null, note || '재고 폐기');
+          needMedUpdate = true;
+        }
       });
       transaction();
 
-      // Supabase 동기화 트리거
+      // Supabase 동기화 트리거 - 트랜잭션 외부에서 안전하게 실행
       if (needMedUpdate) {
         this.updateUpdatedAt('medicines', medicineId);
         this.syncItemToSupabase('medicines', medicineId);
@@ -1201,6 +1308,9 @@ class InventoryManager {
       return pId;
     } else {
       let pId = 0;
+      const medicineIdsToSync = [];
+      const logIdsToSync = [];
+
       const transaction = this.db.transaction(() => {
         const stmt = this.db.prepare(`
           INSERT INTO prescriptions (prescription_name, patient_name, total_items, note, created_at)
@@ -1216,14 +1326,28 @@ class InventoryManager {
 
         for (const item of items) {
           itemStmt.run(pId, item.medicineId, item.amount);
-          this.consumeStock(item.medicineId, item.amount, pId, `${prescriptionName} 처방 (${patientName})`);
+          // 중첩 트랜잭션 방지를 위해 로컬 SQLite 전용 차감 함수 호출
+          const logId = this.consumeStockLocally(item.medicineId, item.amount, pId, `${prescriptionName} 처방 (${patientName})`);
+          
+          medicineIdsToSync.push(item.medicineId);
+          if (logId > 0) {
+            logIdsToSync.push(logId);
+          }
         }
       });
-      transaction();
+      transaction(); // 최종 커밋 완료
 
-      // Supabase 동기화 트리거
+      // 최종 커밋이 성공한 경우에만 Supabase 비동기 동기화 트리거
       this.updateUpdatedAt('prescriptions', pId);
       this.syncPrescriptionToSupabase(pId);
+      
+      for (const medId of medicineIdsToSync) {
+        this.updateUpdatedAt('medicines', medId);
+        this.syncItemToSupabase('medicines', medId);
+      }
+      for (const logId of logIdsToSync) {
+        this.syncItemToSupabase('stock_logs', logId);
+      }
 
       return pId;
     }

@@ -218,10 +218,9 @@ body {
 .category-container {
   display: flex;
   align-items: center;
+  flex-wrap: wrap; /* 카테고리가 많아질 때 줄바꿈되도록 설정 */
   gap: 6px;
   padding: 8px 16px;
-  overflow-x: auto;
-  scrollbar-width: none;
   border-bottom: 1px solid var(--color-border);
 }
 
