@@ -1,6 +1,6 @@
 {
   "name": "herb-stock-manager",
-  "version": "0.1.0",
+  "version": "0.9.0",
   "description": "한의원 전용 약재 재고 관리 프로그램 (초고속 키보드 워크플로우)",
   "main": "src/main.js",
   "scripts": {
@@ -16,6 +16,7 @@
   "author": "Antigravity",
   "license": "ISC",
   "dependencies": {
+    "@supabase/supabase-js": "^2.110.2",
     "better-sqlite3": "^12.0.0"
   },
   "devDependencies": {
