@@ -16,6 +16,8 @@ let currentInquiryMedId = null; // 현재 조회 중인 약재 ID
 let currentPrescriptionItems = []; // 처방 바구니 [{ id, name, pack_size, amount }]
 let batchEditItems = new Map(); // 일괄 편집 대상 약재 맵 (id => medData)
 let contextTargetMedId = null; // 우클릭 대상 약재 ID
+let contextTargetPrescId = null; // 우클릭 대상 처방 ID
+let isPrescriptionEditMode = false; // 처방 수정 모드 활성화 여부
 
 // 브라우저 vs Electron (Node.js) 감지
 const isElectron = typeof require !== 'undefined' && typeof process !== 'undefined';
@@ -282,7 +284,7 @@ function renderMedicineList() {
     item.addEventListener('contextmenu', (e) => {
       e.preventDefault();
       contextTargetMedId = med.id;
-      showContextMenu(e.pageX, e.pageY);
+      showContextMenu('medContextMenu', e.pageX, e.pageY);
     });
 
     listContainer.appendChild(item);
@@ -555,6 +557,13 @@ function renderPastPrescriptions() {
     // 행 클릭 시 과거 처방 세부 품목 상세 모달 로드
     tr.addEventListener('click', () => {
       openPrescriptionDetailModal(p.id);
+    });
+
+    // 마우스 우클릭 (Context Menu) 처방 편집/삭제 트리거
+    tr.addEventListener('contextmenu', (e) => {
+      e.preventDefault();
+      contextTargetPrescId = p.id;
+      showContextMenu('prescContextMenu', e.pageX, e.pageY);
     });
 
     tbody.appendChild(tr);
@@ -931,8 +940,8 @@ function handleEditMedSave() {
 // ----------------------------------------------------
 // 마우스 우클릭 커스텀 컨텍스트 메뉴 제어
 // ----------------------------------------------------
-function showContextMenu(x, y) {
-  const menu = document.getElementById('medContextMenu');
+function showContextMenu(menuElementId, x, y) {
+  const menu = document.getElementById(menuElementId);
   menu.style.display = 'flex';
   
   // 화면 경계 이탈을 방지하기 위해 너비/높이 획득 후 보정
@@ -959,6 +968,8 @@ function showContextMenu(x, y) {
   // 살짝 지연시켜서 즉시 닫히지 않게 처리
   setTimeout(() => document.addEventListener('click', hideMenu), 50);
 }
+
+
 
 // ----------------------------------------------------
 // Toast 알림 전송기
@@ -1182,6 +1193,70 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
+  // ----------------------------------------------------
+  // 처방전 조제 수정 모드 제어 함수
+  // ----------------------------------------------------
+  function enterPrescriptionEditMode(prescId) {
+    try {
+      const detail = dbManager.getPrescriptionDetails(prescId);
+      isPrescriptionEditMode = true;
+      contextTargetPrescId = prescId;
+
+      // 1. UI 탭 전환
+      switchTab('prescription');
+
+      // 2. 제목 변경 및 강조 스타일링 추가
+      document.getElementById('prescriptionCardTitle').textContent = `📝 조제 수정 및 재고 차감 (처방 #${prescId})`;
+      document.getElementById('prescriptionCard').classList.add('edit-mode-highlight');
+
+      // 3. 수정 취소 버튼 표시 및 조제 완료 버튼 텍스트 변경
+      document.getElementById('btnCancelEditPrescription').style.display = 'flex';
+      document.getElementById('btnCompletePrescription').innerHTML = '💾 수정 완료 및 재고 갱신';
+
+      // 4. 입력 필드 값 적재
+      document.getElementById('prescriptionName').value = detail.prescription_name;
+      document.getElementById('patientName').value = detail.patient_name;
+      document.getElementById('prescriptionNote').value = detail.note || '';
+
+      // 5. 처방 바구니 복원
+      currentPrescriptionItems = detail.items.map(item => {
+        const med = dbManager.getAllMedicines().find(m => m.id === item.medicine_id);
+        return {
+          id: item.medicine_id,
+          name: item.medicine_name,
+          pack_size: med ? med.pack_size : 500,
+          amount: item.amount
+        };
+      });
+
+      renderPrescription();
+    } catch (err) {
+      alert(`처방 데이터를 불러오지 못했습니다: ${err.message}`);
+    }
+  }
+
+  function exitPrescriptionEditMode() {
+    isPrescriptionEditMode = false;
+    contextTargetPrescId = null;
+
+    // 1. 제목 및 스타일링 원복
+    document.getElementById('prescriptionCardTitle').textContent = '📝 처방전 조제 작성';
+    document.getElementById('prescriptionCard').classList.remove('edit-mode-highlight');
+
+    // 2. 취소 버튼 숨기기 및 완료 버튼 텍스트 원복
+    document.getElementById('btnCancelEditPrescription').style.display = 'none';
+    document.getElementById('btnCompletePrescription').innerHTML = '💾 조제 완료 및 재고 차감';
+
+    // 3. 입력 필드 초기화
+    document.getElementById('prescriptionName').value = '';
+    document.getElementById('patientName').value = '';
+    document.getElementById('prescriptionNote').value = '';
+
+    // 4. 바구니 초기화 및 렌더링
+    currentPrescriptionItems = [];
+    renderPrescription();
+  }
+
   // 마우스 클릭 탭 스위칭 바인딩
   mainTabs.addEventListener('click', (e) => {
     if (e.target.classList.contains('tab-btn')) {
@@ -1331,7 +1406,43 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   // ----------------------------------------------------
-  // [처방] 조제 제출 처리
+  // 처방 우클릭 컨텍스트 메뉴 액션 연동
+  // ----------------------------------------------------
+  document.getElementById('ctxPrescEdit').addEventListener('click', () => {
+    if (contextTargetPrescId !== null) {
+      enterPrescriptionEditMode(contextTargetPrescId);
+    }
+  });
+
+  document.getElementById('ctxPrescDelete').addEventListener('click', () => {
+    if (contextTargetPrescId !== null) {
+      const detail = dbManager.getPrescriptionDetails(contextTargetPrescId);
+      if (confirm(`⚠️ 정말로 처방전 #${contextTargetPrescId} (${detail.prescription_name} - ${detail.patient_name})을 삭제하시겠습니까? 소모된 약재 재고가 모두 자동으로 복원됩니다.`)) {
+        try {
+          dbManager.deletePrescription(contextTargetPrescId);
+          showToast(`🗑️ 처방 내역이 삭제되고 재고가 복원되었습니다.`, true);
+          
+          if (isPrescriptionEditMode && contextTargetPrescId === contextTargetPrescId) {
+            exitPrescriptionEditMode();
+          }
+
+          renderPastPrescriptions();
+          renderMedicineList();
+          renderPredictView();
+        } catch (err) {
+          alert(`처방 삭제 실패: ${err.message}`);
+        }
+      }
+    }
+  });
+
+  // 수정 취소 버튼
+  document.getElementById('btnCancelEditPrescription').addEventListener('click', () => {
+    exitPrescriptionEditMode();
+  });
+
+  // ----------------------------------------------------
+  // [처방] 조제 제출 및 수정 완료 처리
   // ----------------------------------------------------
   document.getElementById('btnCompletePrescription').addEventListener('click', () => {
     const prescName = document.getElementById('prescriptionName').value.trim();
@@ -1353,9 +1464,15 @@ document.addEventListener('DOMContentLoaded', () => {
         amount: item.amount
       }));
 
-      dbManager.addPrescription(prescName, patName, items, prescNote);
+      if (isPrescriptionEditMode && contextTargetPrescId !== null) {
+        dbManager.updatePrescriptionWithItems(contextTargetPrescId, prescName, patName, items, prescNote);
+        showToast(`🎉 처방전 #${contextTargetPrescId} 수정 완료 및 실시간 재고 갱신 처리되었습니다.`);
+        exitPrescriptionEditMode();
+      } else {
+        dbManager.addPrescription(prescName, patName, items, prescNote);
+        showToast(`🎉 "${prescName}" 조제 완료 및 실시간 재고 차감 처리되었습니다.`);
+      }
 
-      showToast(`🎉 "${prescName}" 조제 완료 및 실시간 재고 차감 처리되었습니다.`);
       currentPrescriptionItems = [];
       document.getElementById('prescriptionName').value = '';
       document.getElementById('patientName').value = '';
@@ -1363,9 +1480,10 @@ document.addEventListener('DOMContentLoaded', () => {
       renderPrescription();
       renderMedicineList();
       renderPastPrescriptions();
+      renderPredictView(); // 발주 예측도 실시간 업데이트
     } catch (err) {
       alert(`조제 처리 실패: ${err.message}`);
-      showToast('재고 부족으로 조제 불가', true);
+      showToast('재고 부족 등으로 조제 실패', true);
     }
   });
 

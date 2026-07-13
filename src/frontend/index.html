@@ -161,9 +161,9 @@
       <!-- 우측 처방전 작성 및 과거 처방 목록 -->
       <div class="right-main-panel">
         <!-- 처방전 작성기 -->
-        <div class="card split-card-top">
+        <div class="card split-card-top" id="prescriptionCard">
           <div class="card-header">
-            <div class="card-title">📝 처방전 조제 작성</div>
+            <div class="card-title" id="prescriptionCardTitle">📝 처방전 조제 작성</div>
             <span style="font-size: 11px; color: var(--color-text-muted);">목록에서 Enter 시 소모량 입력 팝업 노출</span>
           </div>
           <div class="card-content" style="display: flex; flex-direction: column;">
@@ -201,9 +201,12 @@
               <span>추가된 약재가 없습니다.</span>
             </div>
 
-            <div style="text-align: right; margin-top: auto;">
-              <button class="btn btn-primary" id="btnCompletePrescription" style="width: 100%; justify-content: center; padding: 12px 24px;">
-                💾 조제 완료 및 재고 차감 (Enter)
+            <div style="display: flex; gap: 10px; margin-top: auto;">
+              <button class="btn" id="btnCancelEditPrescription" style="flex: 1; justify-content: center; padding: 12px; display: none; align-items: center; border: 1px solid var(--color-border);">
+                ❌ 수정 취소
+              </button>
+              <button class="btn btn-primary" id="btnCompletePrescription" style="flex: 2; justify-content: center; padding: 12px 24px;">
+                💾 조제 완료 및 재고 차감
               </button>
             </div>
           </div>
@@ -504,6 +507,12 @@
   <div class="context-menu" id="medContextMenu">
     <div class="context-menu-item" id="ctxMenuEdit">✏️ 약재 수정</div>
     <div class="context-menu-item" id="ctxMenuDelete" style="color: var(--color-accent);">🗑️ 약재 삭제</div>
+  </div>
+
+  <!-- 처방 우클릭 퀵 컨텍스트 메뉴 -->
+  <div class="context-menu" id="prescContextMenu">
+    <div class="context-menu-item" id="ctxPrescEdit">✏️ 처방 수정</div>
+    <div class="context-menu-item" id="ctxPrescDelete" style="color: var(--color-accent);">🗑️ 처방 삭제</div>
   </div>
 
   <!-- Toast 알림 배너 -->

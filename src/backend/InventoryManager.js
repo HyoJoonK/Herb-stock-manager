@@ -1047,9 +1047,266 @@ class InventoryManager {
       return true;
     } else {
       try {
-        this.recordDeleted('medicines', medicineId);
-        this.db.prepare('DELETE FROM medicines WHERE id = ?').run(medicineId);
+        const itemIds = this.db.prepare('SELECT id FROM prescription_items WHERE medicine_id = ?').all(medicineId).map(row => row.id);
+        const logIds = this.db.prepare('SELECT id FROM stock_logs WHERE medicine_id = ?').all(medicineId).map(row => row.id);
+
+        this.db.transaction(() => {
+          for (const itemId of itemIds) {
+            this.recordDeleted('prescription_items', itemId);
+          }
+          for (const logId of logIds) {
+            this.recordDeleted('stock_logs', logId);
+          }
+          this.recordDeleted('medicines', medicineId);
+
+          this.db.prepare('DELETE FROM prescription_items WHERE medicine_id = ?').run(medicineId);
+          this.db.prepare('DELETE FROM stock_logs WHERE medicine_id = ?').run(medicineId);
+          this.db.prepare('DELETE FROM medicines WHERE id = ?').run(medicineId);
+        })();
+
+        for (const itemId of itemIds) {
+          this.syncDeletedToSupabase('prescription_items', itemId);
+        }
+        for (const logId of logIds) {
+          this.syncDeletedToSupabase('stock_logs', logId);
+        }
         this.syncDeletedToSupabase('medicines', medicineId);
+
+        return true;
+      } catch (err) {
+        throw err;
+      }
+    }
+  }
+
+  /**
+   * 처방전 취소 및 삭제 (재고 자동 롤백 포함)
+   */
+  deletePrescription(prescriptionId) {
+    const pId = Number(prescriptionId);
+    if (this.isMock) {
+      const idx = this.mockData.prescriptions.findIndex(p => p.id === pId);
+      if (idx === -1) throw new Error('삭제할 처방을 찾을 수 없습니다.');
+
+      const items = this.mockData.prescription_items.filter(item => item.prescription_id === pId);
+      items.forEach(item => {
+        const medIdx = this.mockData.medicines.findIndex(m => m.id === item.medicine_id);
+        if (medIdx !== -1) {
+          const med = this.mockData.medicines[medIdx];
+          med.opened_pack_remain += item.amount;
+          if (med.opened_pack_remain >= med.pack_size) {
+            const extraPacks = Math.floor(med.opened_pack_remain / med.pack_size);
+            med.unopened_packs += extraPacks;
+            med.opened_pack_remain = med.opened_pack_remain % med.pack_size;
+          }
+        }
+      });
+
+      this.mockData.prescriptions.splice(idx, 1);
+      this.mockData.prescription_items = this.mockData.prescription_items.filter(item => item.prescription_id !== pId);
+      this.mockData.stock_logs = this.mockData.stock_logs.filter(log => log.prescription_id !== pId);
+
+      this.saveMockData();
+      return true;
+    } else {
+      try {
+        const items = this.db.prepare('SELECT id, medicine_id, amount FROM prescription_items WHERE prescription_id = ?').all(pId);
+        const logs = this.db.prepare('SELECT id FROM stock_logs WHERE prescription_id = ?').all(pId);
+
+        const medicineIdsToSync = [];
+        
+        this.db.transaction(() => {
+          for (const item of items) {
+            const med = this.db.prepare('SELECT unopened_packs, opened_pack_remain, pack_size FROM medicines WHERE id = ?').get(item.medicine_id);
+            if (med) {
+              let newRemain = med.opened_pack_remain + item.amount;
+              let newPacks = med.unopened_packs;
+              if (newRemain >= med.pack_size) {
+                const extraPacks = Math.floor(newRemain / med.pack_size);
+                newPacks += extraPacks;
+                newRemain = newRemain % med.pack_size;
+              }
+              this.db.prepare('UPDATE medicines SET unopened_packs = ?, opened_pack_remain = ? WHERE id = ?')
+                .run(newPacks, newRemain, item.medicine_id);
+              
+              medicineIdsToSync.push(item.medicine_id);
+            }
+          }
+
+          this.recordDeleted('prescriptions', pId);
+          for (const item of items) {
+            this.recordDeleted('prescription_items', item.id);
+          }
+          for (const log of logs) {
+            this.recordDeleted('stock_logs', log.id);
+          }
+
+          this.db.prepare('DELETE FROM prescription_items WHERE prescription_id = ?').run(pId);
+          this.db.prepare('DELETE FROM stock_logs WHERE prescription_id = ?').run(pId);
+          this.db.prepare('DELETE FROM prescriptions WHERE id = ?').run(pId);
+        })();
+
+        this.syncDeletedToSupabase('prescriptions', pId);
+        for (const item of items) {
+          this.syncDeletedToSupabase('prescription_items', item.id);
+        }
+        for (const log of logs) {
+          this.syncDeletedToSupabase('stock_logs', log.id);
+        }
+
+        for (const medId of medicineIdsToSync) {
+          this.updateUpdatedAt('medicines', medId);
+          this.syncItemToSupabase('medicines', medId);
+        }
+
+        return true;
+      } catch (err) {
+        throw err;
+      }
+    }
+  }
+
+  /**
+   * 처방 정보 및 포함 약재 목록/수량 전면 수정 (재고 복원 및 재소모)
+   */
+  updatePrescriptionWithItems(prescriptionId, prescriptionName, patientName, items, note = '') {
+    const pId = Number(prescriptionId);
+    if (!items || items.length === 0) {
+      throw new Error('처방전에 약재가 포함되어야 합니다.');
+    }
+
+    if (this.isMock) {
+      const idx = this.mockData.prescriptions.findIndex(p => p.id === pId);
+      if (idx === -1) throw new Error('수정할 처방을 찾을 수 없습니다.');
+
+      // 1. 기존 재고 복원
+      const oldItems = this.mockData.prescription_items.filter(item => item.prescription_id === pId);
+      oldItems.forEach(item => {
+        const medIdx = this.mockData.medicines.findIndex(m => m.id === item.medicine_id);
+        if (medIdx !== -1) {
+          const med = this.mockData.medicines[medIdx];
+          med.opened_pack_remain += item.amount;
+          if (med.opened_pack_remain >= med.pack_size) {
+            const extraPacks = Math.floor(med.opened_pack_remain / med.pack_size);
+            med.unopened_packs += extraPacks;
+            med.opened_pack_remain = med.opened_pack_remain % med.pack_size;
+          }
+        }
+      });
+
+      // 2. 기존 prescription_items & stock_logs 제거
+      this.mockData.prescription_items = this.mockData.prescription_items.filter(item => item.prescription_id !== pId);
+      this.mockData.stock_logs = this.mockData.stock_logs.filter(log => log.prescription_id !== pId);
+
+      // 3. 처방전 텍스트 업데이트
+      this.mockData.prescriptions[idx].prescription_name = prescriptionName;
+      this.mockData.prescriptions[idx].patient_name = patientName;
+      this.mockData.prescriptions[idx].total_items = items.length;
+      this.mockData.prescriptions[idx].note = note;
+
+      // 4. 새로운 항목 삽입 및 재고 차감
+      items.forEach(item => {
+        const itemId = this.mockData.prescription_items.length + 1;
+        this.mockData.prescription_items.push({
+          id: itemId,
+          prescription_id: pId,
+          medicine_id: item.medicineId,
+          amount: item.amount
+        });
+        
+        this.consumeStock(item.medicineId, item.amount, pId, `${prescriptionName} 처방 (${patientName}) [수정]`);
+      });
+
+      this.saveMockData();
+      return true;
+    } else {
+      try {
+        // 1. 기존 항목 및 로그 조회
+        const oldItems = this.db.prepare('SELECT id, medicine_id, amount FROM prescription_items WHERE prescription_id = ?').all(pId);
+        const oldLogs = this.db.prepare('SELECT id FROM stock_logs WHERE prescription_id = ?').all(pId);
+
+        const medicineIdsToSync = [];
+        const newLogIdsToSync = [];
+
+        this.db.transaction(() => {
+          // 2. 기존 재고 복원
+          for (const oldItem of oldItems) {
+            const med = this.db.prepare('SELECT unopened_packs, opened_pack_remain, pack_size FROM medicines WHERE id = ?').get(oldItem.medicine_id);
+            if (med) {
+              let newRemain = med.opened_pack_remain + oldItem.amount;
+              let newPacks = med.unopened_packs;
+              if (newRemain >= med.pack_size) {
+                const extraPacks = Math.floor(newRemain / med.pack_size);
+                newPacks += extraPacks;
+                newRemain = newRemain % med.pack_size;
+              }
+              this.db.prepare('UPDATE medicines SET unopened_packs = ?, opened_pack_remain = ? WHERE id = ?')
+                .run(newPacks, newRemain, oldItem.medicine_id);
+              
+              if (!medicineIdsToSync.includes(oldItem.medicine_id)) {
+                medicineIdsToSync.push(oldItem.medicine_id);
+              }
+            }
+          }
+
+          // 3. 삭제 이력(deleted_records) 기록
+          for (const oldItem of oldItems) {
+            this.recordDeleted('prescription_items', oldItem.id);
+          }
+          for (const oldLog of oldLogs) {
+            this.recordDeleted('stock_logs', oldLog.id);
+          }
+
+          // 4. 기존 항목들 로컬 DB에서 실제로 제거
+          this.db.prepare('DELETE FROM prescription_items WHERE prescription_id = ?').run(pId);
+          this.db.prepare('DELETE FROM stock_logs WHERE prescription_id = ?').run(pId);
+
+          // 5. 처방 테이블 정보 갱신
+          this.db.prepare(`
+            UPDATE prescriptions 
+            SET prescription_name = ?, patient_name = ?, total_items = ?, note = ?, updated_at = datetime('now', 'utc')
+            WHERE id = ?
+          `).run(prescriptionName, patientName, items.length, note, pId);
+
+          // 6. 새로운 약재 목록으로 재차감 및 새 항목 삽입
+          const itemStmt = this.db.prepare(`
+            INSERT INTO prescription_items (prescription_id, medicine_id, amount)
+            VALUES (?, ?, ?)
+          `);
+
+          for (const item of items) {
+            itemStmt.run(pId, item.medicineId, item.amount);
+            const logId = this.consumeStockLocally(item.medicineId, item.amount, pId, `${prescriptionName} 처방 (${patientName})`);
+            
+            if (!medicineIdsToSync.includes(item.medicineId)) {
+              medicineIdsToSync.push(item.medicineId);
+            }
+            if (logId > 0) {
+              newLogIdsToSync.push(logId);
+            }
+          }
+        })();
+
+        // 7. Supabase 비동기 동기화 처리
+        for (const oldItem of oldItems) {
+          this.syncDeletedToSupabase('prescription_items', oldItem.id);
+        }
+        for (const oldLog of oldLogs) {
+          this.syncDeletedToSupabase('stock_logs', oldLog.id);
+        }
+
+        this.updateUpdatedAt('prescriptions', pId);
+        this.syncPrescriptionToSupabase(pId);
+
+        for (const medId of medicineIdsToSync) {
+          this.updateUpdatedAt('medicines', medId);
+          this.syncItemToSupabase('medicines', medId);
+        }
+
+        for (const logId of newLogIdsToSync) {
+          this.syncItemToSupabase('stock_logs', logId);
+        }
+
         return true;
       } catch (err) {
         throw err;
