@@ -18,123 +18,120 @@ let batchEditItems = new Map(); // 일괄 편집 대상 약재 맵 (id => medDat
 let contextTargetMedId = null; // 우클릭 대상 약재 ID
 let contextTargetPrescId = null; // 우클릭 대상 처방 ID
 let isPrescriptionEditMode = false; // 처방 수정 모드 활성화 여부
+let currentEditingPrescId = null; // 현재 수정 중인 처방 ID
 
-// 브라우저 vs Electron (Node.js) 감지
-const isElectron = typeof require !== 'undefined' && typeof process !== 'undefined';
-
-function initDatabase() {
-  if (isElectron) {
-    try {
-      const path = require('path');
-      const InventoryManager = require('../backend/InventoryManager');
-      const CSVHandler = require('../backend/CSVHandler');
-      const SmartPredictor = require('../backend/SmartPredictor');
-
-      // URL 쿼리 파라미터에서 userDataPath 파싱 (Electron userData 폴더 반영)
-      const urlParams = new URLSearchParams(window.location.search);
-      const userDataPath = urlParams.get('userDataPath');
-      
-      let dbPath;
-      if (userDataPath) {
-        dbPath = path.join(userDataPath, 'herb_inventory.db');
-      } else {
-        dbPath = path.join(process.cwd(), 'herb_inventory.db');
-      }
-
-      dbManager = new InventoryManager(dbPath);
-      csvHandler = CSVHandler;
-      predictor = new SmartPredictor(dbManager);
-      
-      // 실시간 데이터 변경 감지 콜백 바인딩
-      if (typeof dbManager.onDataChange === 'function') {
-        dbManager.onDataChange(() => {
-          console.log('🔔 Supabase Realtime: 원격 데이터 변경 감지, 화면을 갱신합니다.');
-          renderMedicineList();
-          const viewPrescTable = document.getElementById('prescriptionHistoryBody');
-          if (viewPrescTable) renderPrescriptionHistory();
-        });
-      }
-      
-      if (dbManager.isMock) {
-        showToast('⚠️ SQLite 초기화 실패로 로컬 백업(Mock JSON) 모드로 가동되었습니다.', true);
-      } else {
-        // 구동 시 Supabase 자동 연결 및 백그라운드 동기화 수행
-        const savedUrl = localStorage.getItem('supabase_url');
-        const savedKey = localStorage.getItem('supabase_key');
-        if (savedUrl && savedKey) {
-          dbManager.setupSupabase(savedUrl, savedKey)
-            .then(success => {
-              if (success) {
-                showToast('🟢 Supabase 공유 DB 동기화가 활성화되었습니다.');
-                renderMedicineList();
-                const viewPrescTable = document.getElementById('prescriptionHistoryBody');
-                if (viewPrescTable) renderPrescriptionHistory();
-              } else {
-                showToast('⚠️ Supabase 연결 실패: 로컬 단독 모드로 구동됩니다.', true);
-              }
-            })
-            .catch(e => {
-              console.error('Supabase 자동 연결 실패:', e);
-              showToast('⚠️ Supabase 자동 연결 실패: ' + e.message, true);
-            });
-        } else {
-          showToast('⚡ Electron SQLite 모드가 가동되었습니다.');
-        }
-      }
-    } catch (e) {
-      console.error('Node.js 백엔드 로드 실패, Web Mock 모드로 전환합니다:', e);
-      setupWebMock();
-    }
-  } else {
-    setupWebMock();
+/**
+ * UTC 기반의 시간 문자열(예: 'YYYY-MM-DD HH:mm:ss' 또는 ISO 8601 형식)을
+ * 한국 시간대(KST, UTC+9)의 Date 객체로 변환합니다.
+ * @param {string|Date} [utcTime]
+ * @returns {Date} KST 기준의 Date 객체
+ */
+function parseUTCToKST(utcTime) {
+  if (!utcTime) return new Date();
+  
+  if (utcTime instanceof Date) {
+    return utcTime;
   }
+
+  let formatted = utcTime.toString().trim();
+  if (formatted.indexOf('T') === -1) {
+    formatted = formatted.replace(' ', 'T');
+  }
+  if (!formatted.endsWith('Z') && !formatted.includes('+')) {
+    formatted += 'Z';
+  }
+  
+  const date = new Date(formatted);
+  if (isNaN(date.getTime())) return new Date();
+  return date;
 }
 
-function setupWebMock() {
-  dbManager = new window.InventoryManager();
-  csvHandler = window.CSVHandler;
-  predictor = new window.SmartPredictor(dbManager);
+/**
+ * UTC 기반 시간 문자열을 한국 시간대 'YYYY-MM-DD HH:mm:ss' 형식으로 포맷팅합니다.
+ * 인자가 없거나 falsy할 경우 현재 시간(KST) 문자열을 반환합니다.
+ * @param {string} [utcTimeStr]
+ * @returns {string} 'YYYY-MM-DD HH:mm:ss'
+ */
+function formatUTCToKSTString(utcTimeStr) {
+  if (!utcTimeStr) {
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = String(now.getMonth() + 1).padStart(2, '0');
+    const day = String(now.getDate()).padStart(2, '0');
+    const hours = String(now.getHours()).padStart(2, '0');
+    const minutes = String(now.getMinutes()).padStart(2, '0');
+    const seconds = String(now.getSeconds()).padStart(2, '0');
+    return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
+  }
   
-  // 브라우저용 Mock 데모 카테고리 및 약재 초기 시드 적재
-  dbManager.mockData.categories = [
-    { id: 1, name: '미분류' },
-    { id: 2, name: '보혈약' },
-    { id: 3, name: '보기약' },
-    { id: 4, name: '해표약' }
-  ];
-  dbManager.mockData.medicines = [
-    { id: 1, name: '당귀', category_id: 2, pack_size: 500, unopened_packs: 5, opened_pack_remain: 120, safety_stock: 1500, unit: 'g' },
-    { id: 2, name: '감초', category_id: 3, pack_size: 600, unopened_packs: 3, opened_pack_remain: 450, safety_stock: 1200, unit: 'g' },
-    { id: 3, name: '갈근', category_id: 4, pack_size: 500, unopened_packs: 1, opened_pack_remain: 50, safety_stock: 1000, unit: 'g' },
-    { id: 4, name: '숙지황', category_id: 2, pack_size: 500, unopened_packs: 8, opened_pack_remain: 350, safety_stock: 2000, unit: 'g' },
-    { id: 5, name: '황기', category_id: 3, pack_size: 500, unopened_packs: 0, opened_pack_remain: 200, safety_stock: 1000, unit: 'g' }
-  ];
-  
-  // 최근 30일 간의 소모 이력 시뮬레이션용 시드 적재 (Canvas 사용량 그래프 가시화용)
-  const now = new Date();
-  for (let d = 1; d <= 20; d++) {
-    // 2~3일에 한 번씩 10~50g 사이의 조제 소모 발생 기록
-    if (d % 2 === 0) {
-      dbManager.mockData.stock_logs.push({
-        id: dbManager.mockData.stock_logs.length + 1,
-        medicine_id: 1, // 당귀 소모로그 집중 생성
-        type: 'CONSUME',
-        quantity: -Math.floor(10 + Math.random() * 40),
-        timestamp: new Date(now.getTime() - d * 24 * 60 * 60 * 1000).toISOString().replace('T', ' ').substring(0, 19),
-        note: '조제 소모'
-      });
-      dbManager.mockData.stock_logs.push({
-        id: dbManager.mockData.stock_logs.length + 1,
-        medicine_id: 2, // 감초
-        type: 'CONSUME',
-        quantity: -Math.floor(5 + Math.random() * 20),
-        timestamp: new Date(now.getTime() - d * 24 * 60 * 60 * 1000).toISOString().replace('T', ' ').substring(0, 19),
-        note: '조제 소모'
+  const date = parseUTCToKST(utcTimeStr);
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  const hours = String(date.getHours()).padStart(2, '0');
+  const minutes = String(date.getMinutes()).padStart(2, '0');
+  const seconds = String(date.getSeconds()).padStart(2, '0');
+  return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
+}
+
+function initDatabase() {
+  try {
+    const path = require('path');
+    const InventoryManager = require('../backend/InventoryManager');
+    const CSVHandler = require('../backend/CSVHandler');
+    const SmartPredictor = require('../backend/SmartPredictor');
+
+    // URL 쿼리 파라미터에서 userDataPath 파싱 (Electron userData 폴더 반영)
+    const urlParams = new URLSearchParams(window.location.search);
+    const userDataPath = urlParams.get('userDataPath');
+    
+    let dbPath;
+    if (userDataPath) {
+      dbPath = path.join(userDataPath, 'herb_inventory.db');
+    } else {
+      dbPath = path.join(process.cwd(), 'herb_inventory.db');
+    }
+
+    dbManager = new InventoryManager(dbPath);
+    csvHandler = CSVHandler;
+    predictor = new SmartPredictor(dbManager);
+    
+    // 실시간 데이터 변경 감지 콜백 바인딩
+    if (typeof dbManager.onDataChange === 'function') {
+      dbManager.onDataChange(() => {
+        console.log('🔔 Supabase Realtime: 원격 데이터 변경 감지, 화면을 갱신합니다.');
+        renderMedicineList();
+        const viewPrescTable = document.getElementById('pastPrescriptionsBody');
+        if (viewPrescTable) renderPastPrescriptions();
       });
     }
+    
+    // 구동 시 Supabase 자동 연결 및 백그라운드 동기화 수행
+    const savedUrl = localStorage.getItem('supabase_url');
+    const savedKey = localStorage.getItem('supabase_key');
+    if (savedUrl && savedKey) {
+      dbManager.setupSupabase(savedUrl, savedKey)
+        .then(success => {
+          if (success) {
+            showToast('🟢 Supabase 공유 DB 동기화가 활성화되었습니다.');
+            renderMedicineList();
+            const viewPrescTable = document.getElementById('pastPrescriptionsBody');
+            if (viewPrescTable) renderPastPrescriptions();
+          } else {
+            showToast('⚠️ Supabase 연결 실패: 로컬 단독 모드로 구동됩니다.', true);
+          }
+        })
+        .catch(e => {
+          console.error('Supabase 자동 연결 실패:', e);
+          showToast('⚠️ Supabase 자동 연결 실패: ' + e.message, true);
+        });
+    } else {
+      showToast('⚡ Electron SQLite 모드가 가동되었습니다.');
+    }
+  } catch (e) {
+    console.error('데이터베이스 초기화 실패:', e);
+    showToast('⚠️ 데이터베이스 초기화 실패: ' + e.message, true);
   }
-
-  showToast('🌿 브라우저 하이브리드 데모 데이터가 구동되었습니다.');
 }
 
 // ----------------------------------------------------
@@ -167,7 +164,7 @@ function renderCategoryTabs(container) {
 /**
  * 활성 탭에 맞춰 약재 리스트 렌더링
  */
-function renderMedicineList() {
+function renderMedicineList(categoryFilter = null) {
   let listContainerId, searchInputId, categoryContainerId;
   
   if (currentTab === 'inquiry') {
@@ -193,15 +190,19 @@ function renderMedicineList() {
   if (!listContainer) return;
 
   const searchQuery = searchInput ? searchInput.value : '';
-  const activeTab = categoryContainer ? categoryContainer.querySelector('.category-tab.active') : null;
-  const categoryFilter = activeTab ? activeTab.dataset.categoryId : '전체';
+  
+  let targetCategory = categoryFilter;
+  if (!targetCategory) {
+    const activeTab = categoryContainer ? categoryContainer.querySelector('.category-tab.active') : null;
+    targetCategory = activeTab ? activeTab.dataset.categoryId : '전체';
+  }
 
   const medicines = dbManager.getAllMedicines();
   
   // 필터링 처리
   const filtered = medicines.filter(med => {
     // 1. 카테고리 필터
-    if (categoryFilter !== '전체' && med.category_id != categoryFilter) {
+    if (targetCategory !== '전체' && med.category_id != targetCategory) {
       return false;
     }
     // 2. 검색어 매칭
@@ -358,7 +359,8 @@ function drawUsageChart(canvasId, medId) {
   // 날짜별 소모량 절대값 합산
   const consumptionMap = new Map();
   logs.forEach(log => {
-    const dateStr = log.timestamp.split(' ')[0]; // YYYY-MM-DD
+    const kstStr = formatUTCToKSTString(log.timestamp);
+    const dateStr = kstStr.split(' ')[0]; // KST 기준 YYYY-MM-DD
     const qty = Math.abs(log.quantity);
     consumptionMap.set(dateStr, (consumptionMap.get(dateStr) || 0) + qty);
   });
@@ -371,7 +373,11 @@ function drawUsageChart(canvasId, medId) {
   
   for (let i = dayCount - 1; i >= 0; i--) {
     const d = new Date(now.getTime() - i * 24 * 60 * 60 * 1000);
-    const dateStr = d.toISOString().slice(0, 10);
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    const dateStr = `${year}-${month}-${day}`;
+    
     labels.push(d.getDate() + '일');
     data.push(consumptionMap.get(dateStr) || 0);
   }
@@ -479,7 +485,7 @@ function renderInquiryLogs(medId) {
     tr.innerHTML = `
       <td>${typeBadge}</td>
       <td style="font-weight:700; color:${log.quantity > 0 ? 'var(--color-primary)' : 'var(--color-accent)'}">${qtyFormatted}</td>
-      <td style="color:var(--color-text-muted);">${log.timestamp.slice(5, 16)}</td>
+      <td style="color:var(--color-text-muted);">${formatUTCToKSTString(log.timestamp).slice(5, 16)}</td>
       <td style="font-size:11px;">${log.note || ''}</td>
     `;
     tbody.appendChild(tr);
@@ -551,7 +557,7 @@ function renderPastPrescriptions() {
       <td style="font-weight:700; color:var(--color-primary);">${p.prescription_name}</td>
       <td>${p.patient_name}</td>
       <td style="text-align:center;">${p.total_items}종</td>
-      <td style="color:var(--color-text-muted); font-size:11px;">${p.created_at}</td>
+      <td style="color:var(--color-text-muted); font-size:11px;">${formatUTCToKSTString(p.created_at)}</td>
     `;
     
     // 행 클릭 시 과거 처방 세부 품목 상세 모달 로드
@@ -580,7 +586,7 @@ function openPrescriptionDetailModal(prescId) {
     
     document.getElementById('viewPrescName').textContent = detail.prescription_name;
     document.getElementById('viewPrescPatient').textContent = detail.patient_name;
-    document.getElementById('viewPrescDate').textContent = detail.created_at;
+    document.getElementById('viewPrescDate').textContent = formatUTCToKSTString(detail.created_at);
     document.getElementById('viewPrescNote').textContent = detail.note || '메모 없음';
     
     const tbody = document.getElementById('viewPrescItemsBody');
@@ -1007,6 +1013,19 @@ document.addEventListener('DOMContentLoaded', () => {
         }
       }
     });
+    prescTbody.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && e.target.classList.contains('presc-item-amount-input')) {
+        e.preventDefault();
+        const tr = e.target.closest('tr');
+        const index = parseInt(tr.dataset.index);
+        const val = parseFloat(e.target.value);
+        if (!isNaN(val) && val > 0) {
+          currentPrescriptionItems[index].amount = val;
+        }
+        const completeBtn = document.getElementById('btnCompletePrescription');
+        if (completeBtn) completeBtn.click();
+      }
+    });
     prescTbody.addEventListener('click', (e) => {
       if (e.target.classList.contains('presc-remove-btn')) {
         const tr = e.target.closest('tr');
@@ -1038,11 +1057,8 @@ document.addEventListener('DOMContentLoaded', () => {
     const inputEl = document.getElementById(id);
     if (inputEl) {
       inputEl.addEventListener('input', () => {
-        searchEngine.state = 'search';
-        searchEngine.currentListIndex = -1;
-        searchEngine.lastSelectedIndex = -1;
-        searchEngine.selectedIds.clear();
-        searchEngine.callbacks.onSelectionChange(searchEngine.selectedIds);
+        // QuickSearchEngine의 공용 상태 리셋 메서드를 명시적으로 호출합니다.
+        searchEngine.resetSearchState();
         renderMedicineList();
       });
       inputEl.addEventListener('focus', () => {
@@ -1069,8 +1085,8 @@ document.addEventListener('DOMContentLoaded', () => {
     popupContainer: document.getElementById('quantityPopup'),
     popupInput: document.getElementById('popupQuantityInput')
   }, {
-    onFilter: () => {
-      renderMedicineList();
+    onFilter: (categoryId) => {
+      renderMedicineList(categoryId);
     },
     onAddToPrescription: (medId, amount) => {
       const med = dbManager.getAllMedicines().find(m => m.id === medId);
@@ -1200,7 +1216,7 @@ document.addEventListener('DOMContentLoaded', () => {
     try {
       const detail = dbManager.getPrescriptionDetails(prescId);
       isPrescriptionEditMode = true;
-      contextTargetPrescId = prescId;
+      currentEditingPrescId = prescId;
 
       // 1. UI 탭 전환
       switchTab('prescription');
@@ -1237,7 +1253,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   function exitPrescriptionEditMode() {
     isPrescriptionEditMode = false;
-    contextTargetPrescId = null;
+    currentEditingPrescId = null;
 
     // 1. 제목 및 스타일링 원복
     document.getElementById('prescriptionCardTitle').textContent = '📝 처방전 조제 작성';
@@ -1307,10 +1323,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 // 동기화 후 목록 갱신
                 renderMedicineList();
                 // 처방 탭의 loadAllPrescriptions 또는 처방 목록도 갱신해야 할 수 있음
-                const viewPrescTable = document.getElementById('prescriptionHistoryBody');
+                const viewPrescTable = document.getElementById('pastPrescriptionsBody');
                 if (viewPrescTable) {
                   // 처방 이력이 있으면 갱신
-                  renderPrescriptionHistory();
+                  renderPastPrescriptions();
                 }
               } else {
                 showToast('🔴 Supabase 연결에 실패했습니다. 설정을 다시 확인해주세요.', true);
@@ -1422,7 +1438,7 @@ document.addEventListener('DOMContentLoaded', () => {
           dbManager.deletePrescription(contextTargetPrescId);
           showToast(`🗑️ 처방 내역이 삭제되고 재고가 복원되었습니다.`, true);
           
-          if (isPrescriptionEditMode && contextTargetPrescId === contextTargetPrescId) {
+          if (isPrescriptionEditMode && contextTargetPrescId === currentEditingPrescId) {
             exitPrescriptionEditMode();
           }
 
@@ -1464,9 +1480,9 @@ document.addEventListener('DOMContentLoaded', () => {
         amount: item.amount
       }));
 
-      if (isPrescriptionEditMode && contextTargetPrescId !== null) {
-        dbManager.updatePrescriptionWithItems(contextTargetPrescId, prescName, patName, items, prescNote);
-        showToast(`🎉 처방전 #${contextTargetPrescId} 수정 완료 및 실시간 재고 갱신 처리되었습니다.`);
+      if (isPrescriptionEditMode && currentEditingPrescId !== null) {
+        dbManager.updatePrescriptionWithItems(currentEditingPrescId, prescName, patName, items, prescNote);
+        showToast(`🎉 처방전 #${currentEditingPrescId} 수정 완료 및 실시간 재고 갱신 처리되었습니다.`);
         exitPrescriptionEditMode();
       } else {
         dbManager.addPrescription(prescName, patName, items, prescNote);
@@ -1579,7 +1595,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const url = URL.createObjectURL(blob);
         const link = document.createElement('a');
         link.setAttribute('href', url);
-        link.setAttribute('download', `한의원약재재고_${new Date().toISOString().slice(0,10)}.csv`);
+        link.setAttribute('download', `한의원약재재고_${formatUTCToKSTString().slice(0,10)}.csv`);
         document.body.appendChild(link);
         link.click();
         document.body.removeChild(link);
@@ -1605,9 +1621,10 @@ document.addEventListener('DOMContentLoaded', () => {
           if (id === 'quantityPopup') document.getElementById('popupQuantityInput').value = '';
         }
       });
-      if (typeof hideContextMenu === 'function') {
-        hideContextMenu();
-      }
+      const medCtx = document.getElementById('medContextMenu');
+      const prescCtx = document.getElementById('prescContextMenu');
+      if (medCtx) medCtx.style.display = 'none';
+      if (prescCtx) prescCtx.style.display = 'none';
     }
 
     // 2. Tab / Shift+Tab 포커스 트랩 (Focus Trap)

@@ -98,6 +98,7 @@ class CSVHandler {
     );
 
     let successCount = 0;
+    let tempSuccessCount = 0; // 트랜잭션 롤백 시 카운트 오염을 방지하기 위한 임시 카운터
     let skipCount = 0;
     const errors = [];
     const insertedNames = new Set();
@@ -185,7 +186,7 @@ class CSVHandler {
           });
 
           insertedNames.add(name);
-          successCount++;
+          tempSuccessCount++;
         } catch (err) {
           errors.push(`행 ${i + 1} [DB 오류]: ${err.message}`);
           skipCount++;
@@ -195,12 +196,15 @@ class CSVHandler {
 
     if (dbManager.isMock) {
       executeImport();
+      successCount = tempSuccessCount;
     } else {
       try {
         const transaction = dbManager.db.transaction(executeImport);
         transaction();
+        successCount = tempSuccessCount; // 트랜잭션이 성공적으로 끝났을 때만 successCount 할당
       } catch (err) {
         errors.push(`대량 적재 중 심각한 트랜잭션 오류: ${err.message}`);
+        successCount = 0; // 오류 시 롤백되므로 성공 수 0으로 초기화
       }
     }
 
@@ -249,20 +253,6 @@ class CSVHandler {
     });
 
     return lines.join('\n');
-  }
-
-  static importFromFilePath(filePath, dbManager) {
-    if (!fs.existsSync(filePath)) {
-      throw new Error(`파일이 존재하지 않습니다: ${filePath}`);
-    }
-    const content = fs.readFileSync(filePath, 'utf-8');
-    return this.importFromCSV(content, dbManager);
-  }
-
-  static exportToFilePath(filePath, dbManager) {
-    const csvContent = this.exportToCSV(dbManager);
-    fs.writeFileSync(filePath, csvContent, 'utf-8');
-    return true;
   }
 }
 

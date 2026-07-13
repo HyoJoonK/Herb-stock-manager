@@ -1,6 +1,6 @@
 {
   "name": "herb-stock-manager",
-  "version": "0.9.2",
+  "version": "0.9.3",
   "description": "한의원 전용 약재 재고 관리 프로그램 (초고속 키보드 워크플로우)",
   "main": "src/main.js",
   "scripts": {
@@ -26,6 +26,7 @@
   "build": {
     "appId": "com.hyojoonk.herbstockmanager",
     "productName": "HerbStockManager",
+    "icon": "src/assets/icon.png",
     "directories": {
       "output": "dist"
     },

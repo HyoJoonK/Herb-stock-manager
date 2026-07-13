@@ -14,6 +14,7 @@ function createWindow() {
     minWidth: 1024,
     minHeight: 700,
     title: "약재 재고 관리 시스템 (Herb Stock)",
+    icon: path.join(__dirname, "assets/icon.png"),
     webPreferences: {
       // 렌더러에서 직접 DB 연동 모듈을 불러오기 위해 NodeIntegration을 활성화합니다.
       nodeIntegration: true,

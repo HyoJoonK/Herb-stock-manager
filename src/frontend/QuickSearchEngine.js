@@ -24,7 +24,7 @@ class QuickSearchEngine {
       onTabChange: callbacks.onTabChange,               // 탭 변경 콜백 (Alt+1~4 대응)
       onInquiryMed: callbacks.onInquiryMed,             // 조회 탭 엔터 콜백
       onAddToBatch: callbacks.onAddToBatch,             // 일괄 작업 탭 엔터 콜백
-      onSelectionChange: callbacks.onSelectionChange    // 다중 선택 상태 변경 콜백
+      onSelectionChange: callbacks.onSelectionChange    // 다중 선택 상태 변경 콜백 (전달되는 인자는 Set<number> 타입입니다)
     };
 
     // 포커스 상태: 'search' | 'category' | 'list' | 'popup'
@@ -60,16 +60,6 @@ class QuickSearchEngine {
     // 키보드 이벤트 리스너
     window.addEventListener('keydown', (e) => this.handleKeyDown(e));
     
-    // 검색 입력창 실시간 입력 이벤트
-    this.elements.searchInput.addEventListener('input', () => {
-      this.state = 'search';
-      this.currentListIndex = -1;
-      this.lastSelectedIndex = -1;
-      this.selectedIds.clear();
-      this.callbacks.onSelectionChange(this.selectedIds);
-      this.callbacks.onFilter();
-    });
-
     // 팝업 열렸을 때 input 포커스 아웃 방어
     this.elements.popupInput.addEventListener('blur', () => {
       if (this.state === 'popup') {
@@ -79,6 +69,19 @@ class QuickSearchEngine {
     
     this.setFocusState('search');
   }
+
+  /**
+   * 실시간 검색어 입력 등 상태 리셋이 필요할 때 호출하는 public 메서드.
+   * renderer.js의 통합 input 이벤트 리스너에서 직접 호출됩니다.
+   */
+  resetSearchState() {
+    this.state = 'search';
+    this.currentListIndex = -1;
+    this.lastSelectedIndex = -1;
+    this.selectedIds.clear();
+    this.callbacks.onSelectionChange(this.selectedIds);
+  }
+
 
   /**
    * 한국어 초성 추출 헬퍼
@@ -118,6 +121,13 @@ class QuickSearchEngine {
    * 글로벌 키 입력 인터셉터 및 포커스 상태 기계
    */
   handleKeyDown(e) {
+    // 모달창(.modal-overlay.show) 또는 팝업(.popup-overlay.show)이 활성화되어 있는 동안에는 키보드 인터셉트 비활성화
+    // 단, 소모량 입력 팝업(#quantityPopup) 자체의 입력 제어를 위해 #quantityPopup은 예외로 둡니다.
+    const activeModal = document.querySelector('.modal-overlay.show, .popup-overlay.show:not(#quantityPopup)');
+    if (activeModal) {
+      return;
+    }
+
     const key = e.key;
 
     // ----------------------------------------------------
@@ -129,6 +139,11 @@ class QuickSearchEngine {
       this.activeTab = tabIndex;
       this.callbacks.onTabChange(tabIndex);
       this.setFocusState('search');
+      return;
+    }
+
+    // 발주 예측 탭(Alt+3, 인덱스 2)인 경우 단축키 차단
+    if (this.activeTab === 2) {
       return;
     }
 

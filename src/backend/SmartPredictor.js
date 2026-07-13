@@ -25,48 +25,22 @@ class SmartPredictor {
     // 기본적으로 모든 약재의 일평균 소모량을 0으로 초기화
     currentMedicines.forEach(m => dailyAverages.set(m.id, 0));
 
-    if (this.dbManager.isMock) {
-      // Mock 데이터 분석 처리
-      const now = new Date();
-      const cutoffTime = new Date(now.getTime() - (analysisDays * 24 * 60 * 60 * 1000));
-      
-      const consumeLogs = this.dbManager.mockData.stock_logs.filter(log => {
-        if (log.type !== 'CONSUME') return false;
-        const logDate = new Date(log.timestamp.replace(' ', 'T'));
-        return logDate >= cutoffTime;
+    // SQLite 데이터베이스 쿼리 실행
+    // 현재 날짜 기준 analysisDays일 전부터의 CONSUME 로그 집계
+    const query = `
+      SELECT medicine_id, SUM(ABS(quantity)) as total_consumed
+      FROM stock_logs
+      WHERE type = 'CONSUME'
+        AND timestamp >= datetime('now', '-' || ? || ' days')
+      GROUP BY medicine_id
+    `;
+    try {
+      const rows = this.dbManager.db.prepare(query).all(analysisDays);
+      rows.forEach(row => {
+        dailyAverages.set(row.medicine_id, row.total_consumed / analysisDays);
       });
-
-      // 약재별 소모 총량 계산
-      const totals = {};
-      consumeLogs.forEach(log => {
-        // 소모량은 로그에 음수로 찍히므로 절대값 적용
-        const qty = Math.abs(log.quantity);
-        totals[log.medicine_id] = (totals[log.medicine_id] || 0) + qty;
-      });
-
-      // 일평균 소모량 산출
-      Object.keys(totals).forEach(medId => {
-        const id = parseInt(medId);
-        dailyAverages.set(id, totals[id] / analysisDays);
-      });
-    } else {
-      // SQLite 데이터베이스 쿼리 실행
-      // 현재 날짜 기준 analysisDays일 전부터의 CONSUME 로그 집계
-      const query = `
-        SELECT medicine_id, SUM(ABS(quantity)) as total_consumed
-        FROM stock_logs
-        WHERE type = 'CONSUME'
-          AND timestamp >= datetime('now', '-' || ? || ' days')
-        GROUP BY medicine_id
-      `;
-      try {
-        const rows = this.dbManager.db.prepare(query).all(analysisDays);
-        rows.forEach(row => {
-          dailyAverages.set(row.medicine_id, row.total_consumed / analysisDays);
-        });
-      } catch (err) {
-        console.error('SQLite 소모량 조회 실패:', err);
-      }
+    } catch (err) {
+      console.error('SQLite 소모량 조회 실패:', err);
     }
 
     return dailyAverages;
@@ -115,24 +89,22 @@ class SmartPredictor {
   updateSafetyStocksToSuggested(leadTimeDays = 7, analysisDays = 30) {
     const suggestions = this.getSafetyStockSuggestions(leadTimeDays, analysisDays);
 
-    if (this.dbManager.isMock) {
+    const transaction = this.dbManager.db.transaction(() => {
+      const stmt = this.dbManager.db.prepare("UPDATE medicines SET safety_stock = ?, updated_at = ? WHERE id = ?");
+      const adjustedTime = this.dbManager.getAdjustedSqliteTime();
       suggestions.forEach(s => {
-        const med = this.dbManager.mockData.medicines.find(m => m.id === s.medicineId);
-        if (med) {
-          med.safety_stock = s.suggestedSafetyStock;
-        }
+        stmt.run(s.suggestedSafetyStock, adjustedTime, s.medicineId);
       });
-      return true;
-    } else {
-      const transaction = this.dbManager.db.transaction(() => {
-        const stmt = this.dbManager.db.prepare('UPDATE medicines SET safety_stock = ? WHERE id = ?');
-        suggestions.forEach(s => {
-          stmt.run(s.suggestedSafetyStock, s.medicineId);
-        });
+    });
+    transaction();
+    
+    // Supabase 동기화 트리거 (비동기)
+    if (this.dbManager.supabase) {
+      suggestions.forEach(s => {
+        this.dbManager.syncItemToSupabase('medicines', s.medicineId);
       });
-      transaction();
-      return true;
     }
+    return true;
   }
 
   /**
