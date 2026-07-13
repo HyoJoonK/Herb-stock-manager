@@ -145,9 +145,9 @@ class CSVHandler {
         openedPackRemain = packSize;
       }
 
-      // F 컬럼: 안전 재고 수준 - 없으면 기본값 1000g
+      // F 컬럼: 안전 재고 수준 - 없으면 기본값 500g
       const rawSafety = columns[5] ? columns[5].trim() : '';
-      const safetyStock = rawSafety === '' ? 1000 : this.cleanNumber(rawSafety);
+      const safetyStock = rawSafety === '' ? 500 : this.cleanNumber(rawSafety);
 
       // G 컬럼: 표시 단위
       const unit = (columns[6] ? columns[6].trim() : '') || 'g';

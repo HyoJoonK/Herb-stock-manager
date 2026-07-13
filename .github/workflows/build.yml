@@ -27,7 +27,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '22'
           cache: 'npm'
 
       # ignore-scripts 옵션을 사용하여 better-sqlite3 등의 컴파일 단계 에러를 방지합니다.

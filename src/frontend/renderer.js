@@ -28,14 +28,56 @@ function initDatabase() {
       const CSVHandler = require('../backend/CSVHandler');
       const SmartPredictor = require('../backend/SmartPredictor');
 
-      dbManager = new InventoryManager(path.join(process.cwd(), 'herb_inventory.db'));
+      // URL 쿼리 파라미터에서 userDataPath 파싱 (Electron userData 폴더 반영)
+      const urlParams = new URLSearchParams(window.location.search);
+      const userDataPath = urlParams.get('userDataPath');
+      
+      let dbPath;
+      if (userDataPath) {
+        dbPath = path.join(userDataPath, 'herb_inventory.db');
+      } else {
+        dbPath = path.join(process.cwd(), 'herb_inventory.db');
+      }
+
+      dbManager = new InventoryManager(dbPath);
       csvHandler = CSVHandler;
       predictor = new SmartPredictor(dbManager);
+      
+      // 실시간 데이터 변경 감지 콜백 바인딩
+      if (typeof dbManager.onDataChange === 'function') {
+        dbManager.onDataChange(() => {
+          console.log('🔔 Supabase Realtime: 원격 데이터 변경 감지, 화면을 갱신합니다.');
+          renderMedicineList();
+          const viewPrescTable = document.getElementById('prescriptionHistoryBody');
+          if (viewPrescTable) renderPrescriptionHistory();
+        });
+      }
       
       if (dbManager.isMock) {
         showToast('⚠️ SQLite 초기화 실패로 로컬 백업(Mock JSON) 모드로 가동되었습니다.', true);
       } else {
-        showToast('⚡ Electron SQLite 모드가 가동되었습니다.');
+        // 구동 시 Supabase 자동 연결 및 백그라운드 동기화 수행
+        const savedUrl = localStorage.getItem('supabase_url');
+        const savedKey = localStorage.getItem('supabase_key');
+        if (savedUrl && savedKey) {
+          dbManager.setupSupabase(savedUrl, savedKey)
+            .then(success => {
+              if (success) {
+                showToast('🟢 Supabase 공유 DB 동기화가 활성화되었습니다.');
+                renderMedicineList();
+                const viewPrescTable = document.getElementById('prescriptionHistoryBody');
+                if (viewPrescTable) renderPrescriptionHistory();
+              } else {
+                showToast('⚠️ Supabase 연결 실패: 로컬 단독 모드로 구동됩니다.', true);
+              }
+            })
+            .catch(e => {
+              console.error('Supabase 자동 연결 실패:', e);
+              showToast('⚠️ Supabase 자동 연결 실패: ' + e.message, true);
+            });
+        } else {
+          showToast('⚡ Electron SQLite 모드가 가동되었습니다.');
+        }
       }
     } catch (e) {
       console.error('Node.js 백엔드 로드 실패, Web Mock 모드로 전환합니다:', e);
@@ -788,7 +830,7 @@ function openAddMedicineModal() {
   document.getElementById('editMedPackSize').value = '500';
   document.getElementById('editMedUnopened').value = '0';
   document.getElementById('editMedRemain').value = '0';
-  document.getElementById('editMedSafety').value = '1000';
+  document.getElementById('editMedSafety').value = '500';
   document.getElementById('editMedUnit').value = 'g';
 
   // 카테고리 셀렉트박스 바인딩
@@ -942,7 +984,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const searchInput = document.getElementById('inquirySearchInput'); // 초기 포커스 대행
   const mainTabs = document.getElementById('mainTabs');
 
-  // 3개 탭 검색창에 실시간 검색(Filter) 리스너 개별 직접 바인딩
+  // 3개 탭 검색창에 실시간 검색(Filter) 및 포커스 상태 동기화 바인딩
   ['inquirySearchInput', 'prescriptionSearchInput', 'batchSearchInput'].forEach(id => {
     const inputEl = document.getElementById(id);
     if (inputEl) {
@@ -953,6 +995,11 @@ document.addEventListener('DOMContentLoaded', () => {
         searchEngine.selectedIds.clear();
         searchEngine.callbacks.onSelectionChange(searchEngine.selectedIds);
         renderMedicineList();
+      });
+      inputEl.addEventListener('focus', () => {
+        if (searchEngine.state !== 'search') {
+          searchEngine.setFocusState('search');
+        }
       });
     }
   });
@@ -1104,11 +1151,69 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   });
 
-  // 설정 버튼 클릭 바인딩
+  // 설정 버튼 클릭 바인딩 (Supabase 공유 설정 모달 연동)
   const btnSettings = document.getElementById('btnSettings');
-  if (btnSettings) {
+  const settingsModal = document.getElementById('settingsModal');
+  const settingsSupabaseUrl = document.getElementById('settingsSupabaseUrl');
+  const settingsSupabaseKey = document.getElementById('settingsSupabaseKey');
+  const btnSettingsCancel = document.getElementById('btnSettingsCancel');
+  const btnSettingsSave = document.getElementById('btnSettingsSave');
+
+  if (btnSettings && settingsModal) {
     btnSettings.addEventListener('click', () => {
-      showToast('⚙️ 설정 기능은 추후 구현 예정입니다.');
+      // localStorage에서 기존 설정 정보 복원
+      const savedUrl = localStorage.getItem('supabase_url') || '';
+      const savedKey = localStorage.getItem('supabase_key') || '';
+      settingsSupabaseUrl.value = savedUrl;
+      settingsSupabaseKey.value = savedKey;
+      
+      settingsModal.classList.add('show');
+    });
+
+    btnSettingsCancel.addEventListener('click', () => {
+      settingsModal.classList.remove('show');
+    });
+
+    btnSettingsSave.addEventListener('click', () => {
+      const url = settingsSupabaseUrl.value.trim();
+      const key = settingsSupabaseKey.value.trim();
+
+      localStorage.setItem('supabase_url', url);
+      localStorage.setItem('supabase_key', key);
+
+      settingsModal.classList.remove('show');
+
+      if (url && key) {
+        showToast('⚙️ 설정이 저장되었습니다. 데이터베이스 공유 동기화를 시도합니다.');
+        // dbManager에 설정 전송하여 Supabase 동기화 인프라 재구축
+        if (dbManager && typeof dbManager.setupSupabase === 'function') {
+          dbManager.setupSupabase(url, key)
+            .then(success => {
+              if (success) {
+                showToast('🟢 Supabase 클라우드 데이터베이스와 성공적으로 연결 및 동기화되었습니다.');
+                // 동기화 후 목록 갱신
+                renderMedicineList();
+                // 처방 탭의 loadAllPrescriptions 또는 처방 목록도 갱신해야 할 수 있음
+                const viewPrescTable = document.getElementById('prescriptionHistoryBody');
+                if (viewPrescTable) {
+                  // 처방 이력이 있으면 갱신
+                  renderPrescriptionHistory();
+                }
+              } else {
+                showToast('🔴 Supabase 연결에 실패했습니다. 설정을 다시 확인해주세요.', true);
+              }
+            })
+            .catch(err => {
+              console.error(err);
+              showToast('🔴 Supabase 연결 오류: ' + err.message, true);
+            });
+        }
+      } else {
+        showToast('⚙️ 설정을 해제했습니다. 로컬 단독 모드로 작동합니다.');
+        if (dbManager && typeof dbManager.setupSupabase === 'function') {
+          dbManager.setupSupabase('', ''); // 연결 해제
+        }
+      }
     });
   }
 
@@ -1124,6 +1229,7 @@ document.addEventListener('DOMContentLoaded', () => {
       e.target.classList.add('active');
 
       renderMedicineList();
+      searchEngine.setFocusState('category');
     }
 
     // 2. 동적 카테고리 추가 "+" 버튼

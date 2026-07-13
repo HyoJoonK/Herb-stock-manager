@@ -86,12 +86,18 @@ class SmartPredictor {
     return medicines.map(med => {
       const dailyAvg = dailyAverages.get(med.id) || 0;
       // 동적 안전 재고 제안값 (소수점 첫째자리 반올림)
-      const suggestedSafetyStock = Math.round(dailyAvg * leadTimeDays * 10) / 10;
+      let suggestedSafetyStock = Math.round(dailyAvg * leadTimeDays * 10) / 10;
       
+      // 최소 안전 재고 하한선 보장 (500g 미만인 경우 최소 500g 유지, 단 팩 규격이 500g 미만이면 팩 규격을 하한으로 설정)
+      const minSafetyFloor = Math.min(500, med.pack_size);
+      if (suggestedSafetyStock < minSafetyFloor) {
+        suggestedSafetyStock = minSafetyFloor;
+      }
+
       return {
         medicineId: med.id,
         name: med.name,
-        category: med.category,
+        category: med.category_name,
         currentSafetyStock: med.safety_stock,
         suggestedSafetyStock: suggestedSafetyStock,
         dailyAverage: Math.round(dailyAvg * 100) / 100,
@@ -144,9 +150,8 @@ class SmartPredictor {
     medicines.forEach(med => {
       const dailyAvg = dailyAverages.get(med.id) || 0;
       
-      // 현재 실시간 총 재고량
-      const stockInfo = this.dbManager.getTotalStock(med.id);
-      const currentStock = stockInfo.totalStock;
+      // 현재 실시간 총 재고량 (이미 getAllMedicines에서 계산되어 있음)
+      const currentStock = med.total_stock;
       
       // 안전 재고 기준량 (현재 DB 설정값 기준)
       const safetyStock = med.safety_stock;
@@ -175,7 +180,7 @@ class SmartPredictor {
           packSize: med.pack_size,
           unit: med.unit,
           currentStock: Math.round(currentStock * 10) / 10,
-          formattedStock: stockInfo.formatted,
+          formattedStock: med.formatted_stock,
           safetyStock: safetyStock,
           deficit: Math.round(deficit * 10) / 10,
           nextMonthEstimate: Math.round(nextMonthEstimate * 10) / 10,

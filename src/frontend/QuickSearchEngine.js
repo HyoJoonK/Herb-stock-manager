@@ -294,6 +294,13 @@ class QuickSearchEngine {
     } else if (e.key === 'Escape') {
       e.preventDefault();
       this.setFocusState('search');
+    } else if (e.key === 'Tab') {
+      e.preventDefault();
+      if (e.shiftKey) {
+        this.setFocusState('category');
+      } else {
+        this.setFocusState('search');
+      }
     }
   }
 
