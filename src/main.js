@@ -56,9 +56,12 @@ if (!gotTheLock) {
     }
   });
 
-  app.whenReady().then(() => {
     createWindow();
-    setupAutoUpdater();
+    
+    // 앱 초기 로딩 속도 최적화를 위해, UI가 완전히 그려진 5초 후 백그라운드 업데이트 확인을 실행합니다.
+    setTimeout(() => {
+      setupAutoUpdater();
+    }, 5000);
 
     app.on("activate", () => {
       if (BrowserWindow.getAllWindows().length === 0) {
@@ -71,21 +74,12 @@ if (!gotTheLock) {
 let isManualCheck = false;
 
 function setupAutoUpdater() {
-  // 업데이트 로그 기록 설정
-  const log = require("electron-log");
-  log.transports.file.level = "debug";
-  autoUpdater.logger = log;
-
-  log.info("App starting... (Packaged:", app.isPackaged, "Version:", app.getVersion(), ")");
-
   if (!app.isPackaged) {
-    log.info("개발 모드이므로 자동 업데이트 체크를 건너뜁니다.");
     return;
   }
 
   // 업데이트 다운로드가 완료되었을 때
   autoUpdater.on("update-downloaded", (info) => {
-    log.info("업데이트 다운로드 완료:", info.version);
     dialog.showMessageBox({
       type: "info",
       title: "업데이트 준비 완료",
@@ -95,7 +89,6 @@ function setupAutoUpdater() {
       cancelId: 1
     }).then((result) => {
       if (result.response === 0) {
-        log.info("quitAndInstall 실행 시도");
         autoUpdater.quitAndInstall();
       }
     });
@@ -103,7 +96,6 @@ function setupAutoUpdater() {
 
   // 업데이트가 없을 때 (최신 버전일 때)
   autoUpdater.on("update-not-available", (info) => {
-    log.info("업데이트가 필요하지 않습니다. 최신 버전 상태입니다:", info.version);
     if (isManualCheck) {
       dialog.showMessageBox({
         type: "info",
@@ -116,7 +108,6 @@ function setupAutoUpdater() {
 
   // 에러 발생 시
   autoUpdater.on("error", (err) => {
-    log.error("자동 업데이트 중 에러 발생:", err);
     if (isManualCheck) {
       dialog.showMessageBox({
         type: "error",
@@ -128,14 +119,11 @@ function setupAutoUpdater() {
   });
 
   // 업데이트 자동 확인 실행
-  log.info("checkForUpdatesAndNotify 호출");
   autoUpdater.checkForUpdatesAndNotify();
 }
 
 // 수동 업데이트 확인 IPC 리스너 등록
 ipcMain.on("manual-check-for-update", () => {
-  const log = require("electron-log");
-  log.info("수동 업데이트 확인 요청 수신 (manual-check-for-update)");
   if (!app.isPackaged) {
     dialog.showMessageBox({
       type: "info",
