@@ -1069,16 +1069,36 @@ class InventoryManager {
         this.db.prepare('DELETE FROM prescriptions WHERE id = ?').run(pId);
       })();
 
-      this.syncDeletedToSupabase('prescriptions', pId).catch(err => console.error('[Supabase Sync Error] delete prescriptions:', err));
-      for (const item of items) {
-        this.syncDeletedToSupabase('prescription_items', item.id).catch(err => console.error('[Supabase Sync Error] delete prescription_items:', err));
-      }
-      for (const log of logs) {
-        this.syncDeletedToSupabase('stock_logs', log.id).catch(err => console.error('[Supabase Sync Error] delete stock_logs:', err));
-      }
+      if (this.supabase) {
+        // 하위 항목들(items, logs)을 먼저 Supabase에서 삭제 동기화
+        const deleteSubPromises = [
+          ...items.map(item => 
+            this.syncDeletedToSupabase('prescription_items', item.id)
+              .catch(err => console.error('[Supabase Sync Error] delete prescription_items:', err))
+          ),
+          ...logs.map(log => 
+            this.syncDeletedToSupabase('stock_logs', log.id)
+              .catch(err => console.error('[Supabase Sync Error] delete stock_logs:', err))
+          )
+        ];
 
-      for (const item of items) {
-        this.syncItemToSupabase('medicines', item.medicine_id).catch(err => console.error('[Supabase Sync Error] medicines:', err));
+        Promise.all(deleteSubPromises)
+          .then(() => {
+            // 하위 항목 삭제 완료 후, 처방전 자체 삭제 동기화 진행
+            return this.syncDeletedToSupabase('prescriptions', pId)
+              .catch(err => console.error('[Supabase Sync Error] delete prescriptions:', err));
+          })
+          .then(() => {
+            // 원격 삭제 및 트리거 처리가 완료되어 Supabase 재고 복원이 끝난 후, 최종 medicines 상태를 로컬 정보로 업로드
+            const medPromises = items.map(item => 
+              this.syncItemToSupabase('medicines', item.medicine_id)
+                .catch(err => console.error('[Supabase Sync Error] medicines:', err))
+            );
+            return Promise.all(medPromises);
+          })
+          .catch(err => {
+            console.error('[Supabase Sync Error] 처방 삭제 동기화 전체 프로세스 오류:', err);
+          });
       }
 
       return true;
@@ -1154,30 +1174,45 @@ class InventoryManager {
         }
       })();
 
-      // Supabase 비동기 동기화 처리
-      for (const oldItem of oldItems) {
-        this.syncDeletedToSupabase('prescription_items', oldItem.id).catch(err => console.error('[Supabase Sync Error] delete old prescription_items:', err));
-      }
-      for (const oldLog of oldLogs) {
-        this.syncDeletedToSupabase('stock_logs', oldLog.id).catch(err => console.error('[Supabase Sync Error] delete old stock_logs:', err));
-      }
+      // Supabase 비동기 동기화 처리 (순차 제어 체인)
+      if (this.supabase) {
+        const deleteOldPromises = [
+          ...oldItems.map(oldItem => 
+            this.syncDeletedToSupabase('prescription_items', oldItem.id)
+              .catch(err => console.error('[Supabase Sync Error] delete old prescription_items:', err))
+          ),
+          ...oldLogs.map(oldLog => 
+            this.syncDeletedToSupabase('stock_logs', oldLog.id)
+              .catch(err => console.error('[Supabase Sync Error] delete old stock_logs:', err))
+          )
+        ];
 
-      this.syncPrescriptionToSupabase(pId).catch(err => console.error('[Supabase Sync Error] prescriptions:', err));
-
-      for (const logId of newLogIdsToSync) {
-        this.syncItemToSupabase('stock_logs', logId).catch(err => console.error('[Supabase Sync Error] stock_logs:', err));
-      }
-
-      // 복원 및 재소모된 모든 약재 동기화
-      const medIdsToSync = new Set();
-      for (const oldItem of oldItems) {
-        medIdsToSync.add(oldItem.medicine_id);
-      }
-      for (const item of items) {
-        medIdsToSync.add(item.medicineId);
-      }
-      for (const medId of medIdsToSync) {
-        this.syncItemToSupabase('medicines', medId).catch(err => console.error('[Supabase Sync Error] medicines:', err));
+        Promise.all(deleteOldPromises)
+          .then(() => this.syncPrescriptionToSupabase(pId))
+          .then(() => {
+            const logPromises = newLogIdsToSync.map(logId => 
+              this.syncItemToSupabase('stock_logs', logId)
+                .catch(err => console.error('[Supabase Sync Error] stock_logs:', err))
+            );
+            return Promise.all(logPromises);
+          })
+          .then(() => {
+            const medIdsToSync = new Set();
+            for (const oldItem of oldItems) {
+              medIdsToSync.add(oldItem.medicine_id);
+            }
+            for (const item of items) {
+              medIdsToSync.add(item.medicineId);
+            }
+            const medPromises = Array.from(medIdsToSync).map(medId => 
+              this.syncItemToSupabase('medicines', medId)
+                .catch(err => console.error('[Supabase Sync Error] medicines:', err))
+            );
+            return Promise.all(medPromises);
+          })
+          .catch(err => {
+            console.error('[Supabase Sync Error] 처방 업데이트 동기화 전체 프로세스 오류:', err);
+          });
       }
 
       return true;
@@ -1333,14 +1368,28 @@ class InventoryManager {
     });
     transaction();
 
-    this.syncPrescriptionToSupabase(pId).catch(err => console.error('[Supabase Sync Error] prescriptions:', err));
-    
-    for (const logId of logIdsToSync) {
-      this.syncItemToSupabase('stock_logs', logId).catch(err => console.error('[Supabase Sync Error] stock_logs:', err));
-    }
-
-    for (const item of items) {
-      this.syncItemToSupabase('medicines', item.medicineId).catch(err => console.error('[Supabase Sync Error] medicines:', err));
+    // Supabase 순차 동기화 체인 구동
+    if (this.supabase) {
+      this.syncPrescriptionToSupabase(pId)
+        .then(() => {
+          // 처방전 및 아이템 업로드 완료 후, stock_logs 순차 업로드
+          const logPromises = logIdsToSync.map(logId => 
+            this.syncItemToSupabase('stock_logs', logId)
+              .catch(err => console.error('[Supabase Sync Error] stock_logs:', err))
+          );
+          return Promise.all(logPromises);
+        })
+        .then(() => {
+          // stock_logs 업로드 완료로 Supabase 트리거가 돌고 난 후, 최종 medicines 업로드
+          const medPromises = items.map(item => 
+            this.syncItemToSupabase('medicines', item.medicineId)
+              .catch(err => console.error('[Supabase Sync Error] medicines:', err))
+          );
+          return Promise.all(medPromises);
+        })
+        .catch(err => {
+          console.error('[Supabase Sync Error] 처방 동기화 전체 프로세스 오류:', err);
+        });
     }
 
     return pId;
@@ -1404,6 +1453,23 @@ class InventoryManager {
 
   getAllPrescriptions() {
     return this.db.prepare('SELECT * FROM prescriptions ORDER BY created_at DESC, id DESC').all();
+  }
+
+  searchPrescriptions(query) {
+    if (!query || query.trim() === '') {
+      return this.getAllPrescriptions();
+    }
+    const likeQuery = `%${query.trim()}%`;
+    return this.db.prepare(`
+      SELECT DISTINCT p.* 
+      FROM prescriptions p
+      LEFT JOIN prescription_items pi ON p.id = pi.prescription_id
+      LEFT JOIN medicines m ON pi.medicine_id = m.id
+      WHERE p.prescription_name LIKE ?
+         OR p.patient_name LIKE ?
+         OR m.name LIKE ?
+      ORDER BY p.created_at DESC, p.id DESC
+    `).all(likeQuery, likeQuery, likeQuery);
   }
 }
 

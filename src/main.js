@@ -7,6 +7,9 @@
 const { app, BrowserWindow } = require("electron");
 const path = require("path");
 
+// 윈도우 OS 화면 배율 설정을 무시하고 기본 UI 배율(100%)로 강제 고정합니다.
+app.commandLine.appendSwitch("force-device-scale-factor", "1");
+
 function createWindow() {
   const win = new BrowserWindow({
     width: 1280,

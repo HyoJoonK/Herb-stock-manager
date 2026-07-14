@@ -461,6 +461,10 @@ body {
   overflow-y: auto;
 }
 
+.split-card-bottom .log-table-wrapper {
+  max-height: none;
+}
+
 .presc-table {
   width: 100%;
   border-collapse: collapse;

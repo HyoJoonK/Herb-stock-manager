@@ -538,7 +538,12 @@ function renderPastPrescriptions() {
   const tbody = document.getElementById('pastPrescriptionsBody');
   tbody.innerHTML = '';
 
-  const list = dbManager.getAllPrescriptions();
+  const searchInput = document.getElementById('pastPrescriptionsSearch');
+  const searchQuery = searchInput ? searchInput.value.trim() : '';
+
+  const list = searchQuery !== '' 
+    ? dbManager.searchPrescriptions(searchQuery)
+    : dbManager.getAllPrescriptions();
 
   if (list.length === 0) {
     wrapper.style.display = 'none';
@@ -1068,6 +1073,14 @@ document.addEventListener('DOMContentLoaded', () => {
       });
     }
   });
+
+  // 과거 처방 완료 이력 실시간 검색 바인딩
+  const pastPrescSearch = document.getElementById('pastPrescriptionsSearch');
+  if (pastPrescSearch) {
+    pastPrescSearch.addEventListener('input', () => {
+      renderPastPrescriptions();
+    });
+  }
 
   // 처방 기록 상세조회 모달 닫기 바인딩
   const btnViewPrescClose = document.getElementById('btnViewPrescClose');

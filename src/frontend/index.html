@@ -216,12 +216,16 @@
         <div class="card split-card-bottom">
           <div class="card-header">
             <div class="card-title">📜 처방 완료 이력</div>
+            <div class="search-input-wrapper" style="width: 260px;">
+              <span class="search-icon" style="left: 10px; font-size: 12px; top: 50%; transform: translateY(-50%);">🔍</span>
+              <input type="text" id="pastPrescriptionsSearch" placeholder="처방명, 환자명, 약재명 검색..." autocomplete="off" style="padding: 6px 10px 6px 28px; font-size: 12px; border-radius: var(--radius-sm); height: 28px;">
+            </div>
           </div>
           <div class="card-content" style="padding: 10px 20px; display: flex; flex-direction: column;">
             <div id="pastPrescriptionsEmpty" class="empty-state" style="margin: auto 0;">
               <span>과거 처방 이력이 없습니다.</span>
             </div>
-            <div class="log-table-wrapper" id="pastPrescriptionsWrapper" style="display: none; flex: 1; max-height: 180px;">
+            <div class="log-table-wrapper" id="pastPrescriptionsWrapper" style="display: none; flex: 1;">
               <table class="presc-table">
                 <thead>
                   <tr>
@@ -265,7 +269,7 @@
           <div id="predictEmpty" class="empty-state" style="margin: auto 0; display: none;">
             <span>🎉 안전 재고 기준 이하인 약재가 없습니다.</span>
           </div>
-          <div class="log-table-wrapper" id="predictTableWrapper" style="flex: 1; max-height: 500px;">
+          <div class="log-table-wrapper" id="predictTableWrapper" style="flex: 1; max-height: none;">
             <table class="presc-table">
               <thead>
                 <tr>
