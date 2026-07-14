@@ -1,6 +1,6 @@
 {
   "name": "herb-stock-manager",
-  "version": "1.2.2",
+  "version": "1.2.3",
   "description": "한의원 전용 약재 재고 관리 프로그램 (초고속 키보드 워크플로우)",
   "main": "src/main.js",
   "scripts": {
@@ -47,12 +47,17 @@
       "target": [
         "dmg",
         "zip"
-      ]
+      ],
+      "artifactName": "${productName}-${version}-${arch}.${ext}"
     },
     "win": {
       "target": [
         "nsis"
-      ]
+      ],
+      "publisherName": "HyoJoonK"
+    },
+    "nsis": {
+      "artifactName": "${productName}.Setup.${version}.${ext}"
     },
     "asar": true
   }
