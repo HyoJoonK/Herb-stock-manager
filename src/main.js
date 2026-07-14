@@ -8,9 +8,6 @@ const { app, BrowserWindow, ipcMain, dialog } = require("electron");
 const path = require("path");
 const { autoUpdater } = require("electron-updater");
 
-// 윈도우 OS 화면 배율 설정을 무시하고 기본 UI 배율(100%)로 강제 고정합니다.
-app.commandLine.appendSwitch("force-device-scale-factor", "1");
-
 let mainWindow = null;
 let isManualCheck = false;
 
@@ -125,6 +122,7 @@ function createWindow() {
     minHeight: 700,
     title: "약재 재고 관리 시스템 (Herb Stock)",
     icon: path.join(__dirname, "assets/icon.png"),
+    show: false, // 렌더러가 완전히 준비되기 전에 빈 창이 노출되지 않도록 함
     webPreferences: {
       // 렌더러에서 직접 DB 연동 모듈을 불러오기 위해 NodeIntegration을 활성화합니다.
       nodeIntegration: true,
@@ -146,6 +144,11 @@ function createWindow() {
 
   // 메뉴바 숨김 (조제 전용 키보드 동선 집중)
   win.setMenuBarVisibility(false);
+
+  // 윈도우가 화면에 보일 준비가 완료되었을 때만 표시
+  win.once("ready-to-show", () => {
+    win.show();
+  });
 
   // 개발자 도구 (필요시 활성화)
   // win.webContents.openDevTools();

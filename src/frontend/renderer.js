@@ -4,6 +4,20 @@
  * 다중 카테고리, Shift 복수 선택, 우클릭 수정 및 일괄 변경 제어 구현.
  */
 
+// 고해상도(DPI) 화면 배율에 따른 내부 콘텐츠 줌 레벨 조정 (윈도우 환경 전용)
+try {
+  const { webFrame } = require('electron');
+  const isWindows = process.platform === 'win32';
+  if (isWindows && window.devicePixelRatio > 1.5) {
+    // 윈도우 OS 화면 배율이 150%(devicePixelRatio > 1.5)를 넘을 경우,
+    // UI의 크기를 80% 수준으로 소폭 축소시켜 적절한 여백과 가독성을 확보합니다.
+    // 맥북 레티나 디스플레이 등 타 OS 고해상도 환경은 영향을 받지 않습니다.
+    webFrame.setZoomFactor(0.8);
+  }
+} catch (e) {
+  console.error("화면 배율(DPI) 조정 실패:", e);
+}
+
 // 글로벌 상태 객체
 let dbManager;
 let csvHandler;
