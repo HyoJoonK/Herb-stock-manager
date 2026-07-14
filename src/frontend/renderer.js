@@ -1309,6 +1309,26 @@ document.addEventListener('DOMContentLoaded', () => {
       settingsSupabaseUrl.value = savedUrl;
       settingsSupabaseKey.value = savedKey;
       
+      // 앱 버전 조회 및 표시
+      const { ipcRenderer } = require('electron');
+      ipcRenderer.invoke('get-app-version')
+        .then((ver) => {
+          const appVersionText = document.getElementById('appVersionText');
+          if (appVersionText) appVersionText.textContent = `v${ver}`;
+        })
+        .catch((err) => {
+          console.error('버전 정보 조회 실패:', err);
+          const appVersionText = document.getElementById('appVersionText');
+          if (appVersionText) appVersionText.textContent = 'v1.2.7';
+        });
+
+      // 모달이 열릴 때 상태 텍스트 초기화
+      const updateStatusText = document.getElementById('updateStatusText');
+      if (updateStatusText) {
+        updateStatusText.textContent = '최신 릴리즈 버전을 확인하고 업데이트할 수 있습니다.';
+        updateStatusText.style.color = 'var(--color-text-muted)';
+      }
+      
       settingsModal.classList.add('show');
     });
 
@@ -1630,7 +1650,7 @@ document.addEventListener('DOMContentLoaded', () => {
   document.addEventListener('keydown', (e) => {
     // 1. Esc 키로 모든 모달 닫기
     if (e.key === 'Escape') {
-      const modals = ['editMedicineModal', 'addCategoryModal', 'prescriptionDetailModal', 'quantityPopup'];
+      const modals = ['editMedicineModal', 'addCategoryModal', 'prescriptionDetailModal', 'quantityPopup', 'settingsModal'];
       modals.forEach(id => {
         const el = document.getElementById(id);
         if (el && el.classList.contains('show')) {
@@ -1679,6 +1699,68 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   });
 
+  // 업데이트 기능 초기화
+  initUpdateFeatures();
+
   // 초기 로딩 탭 실행
   switchTab('inquiry');
 });
+
+/**
+ * 자동 업데이트 UI 기능 초기화 및 메인 프로세스 IPC 이벤트 핸들러 바인딩.
+ */
+function initUpdateFeatures() {
+  const { ipcRenderer } = require('electron');
+  const btnCheckUpdate = document.getElementById('btnCheckUpdate');
+  const updateStatusText = document.getElementById('updateStatusText');
+
+  if (!btnCheckUpdate || !updateStatusText) return;
+
+  // 업데이트 확인 버튼 클릭 이벤트
+  btnCheckUpdate.addEventListener('click', () => {
+    btnCheckUpdate.disabled = true;
+    btnCheckUpdate.textContent = '⏳ 확인 중...';
+    updateStatusText.textContent = '최신 업데이트 정보를 조회하는 중입니다...';
+    updateStatusText.style.color = 'var(--color-text-main)';
+    
+    ipcRenderer.send('check-for-updates-manual');
+  });
+
+  // 메인 프로세스로부터의 업데이트 상태 채널 리스너
+  ipcRenderer.on('update-status', (event, status, data) => {
+    switch (status) {
+      case 'checking':
+        updateStatusText.textContent = data.message || '최신 버전 정보 조회 중...';
+        updateStatusText.style.color = 'var(--color-text-main)';
+        break;
+      case 'available':
+        updateStatusText.textContent = data.message || '새로운 업데이트 버전이 발견되었습니다.';
+        updateStatusText.style.color = 'var(--color-primary-light)';
+        break;
+      case 'not-available':
+        updateStatusText.textContent = data.message || '현재 최신 버전을 사용하고 있습니다.';
+        updateStatusText.style.color = 'var(--color-text-main)';
+        btnCheckUpdate.disabled = false;
+        btnCheckUpdate.textContent = '🔄 업데이트 확인';
+        break;
+      case 'downloading':
+        updateStatusText.textContent = data.message || '업데이트 다운로드 진행 중...';
+        updateStatusText.style.color = 'var(--color-primary-light)';
+        break;
+      case 'downloaded':
+        updateStatusText.textContent = data.message || '다운로드 완료. 즉시 설치할 수 있습니다.';
+        updateStatusText.style.color = 'var(--color-primary)';
+        btnCheckUpdate.disabled = false;
+        btnCheckUpdate.textContent = '🔄 업데이트 확인';
+        break;
+      case 'error':
+        updateStatusText.textContent = (data.message || '업데이트 확인 실패.') + (data.error ? ` (${data.error})` : '');
+        updateStatusText.style.color = 'var(--color-accent)';
+        btnCheckUpdate.disabled = false;
+        btnCheckUpdate.textContent = '🔄 업데이트 확인';
+        break;
+      default:
+        break;
+    }
+  });
+}
