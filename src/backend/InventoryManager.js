@@ -530,7 +530,31 @@ class InventoryManager {
     console.log('[Supabase Sync] 양방향 전체 동기화를 시작합니다 (벌크 최적화)...');
 
     try {
-      // 1. 삭제 이력 동기화
+      // 1-1. 서버의 삭제 이력을 다운로드하여 로컬에 반영
+      try {
+        const { data: remoteDeleted, error: errDeleted } = await this.supabase
+          .from('deleted_records')
+          .select('*');
+        
+        if (errDeleted) {
+          console.warn('[Supabase Sync] 서버 삭제 이력 조회 실패:', errDeleted.message);
+        } else if (remoteDeleted && remoteDeleted.length > 0) {
+          const transaction = this.db.transaction(() => {
+            const allowedTables = ['categories', 'medicines', 'prescriptions', 'prescription_items', 'stock_logs'];
+            for (const row of remoteDeleted) {
+              if (allowedTables.includes(row.table_name)) {
+                this.db.prepare(`DELETE FROM ${row.table_name} WHERE id = ?`).run(row.record_id);
+              }
+            }
+          });
+          transaction();
+          console.log(`[Supabase Sync] 서버 삭제 이력 반영 완료 (${remoteDeleted.length}건 적용).`);
+        }
+      } catch (e) {
+        console.error('[Supabase Sync] 서버 삭제 이력 로컬 반영 중 오류:', e);
+      }
+
+      // 1-2. 로컬의 삭제 이력을 서버에 동기화
       const deletedList = this.db.prepare('SELECT * FROM deleted_records').all();
       for (const row of deletedList) {
         await this.syncDeletedToSupabase(row.table_name, row.record_id);
