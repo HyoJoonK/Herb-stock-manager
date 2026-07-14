@@ -1,6 +1,6 @@
 {
   "name": "herb-stock-manager",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "한의원 전용 약재 재고 관리 프로그램 (초고속 키보드 워크플로우)",
   "main": "src/main.js",
   "scripts": {
@@ -17,7 +17,8 @@
   "license": "ISC",
   "dependencies": {
     "@supabase/supabase-js": "^2.110.2",
-    "better-sqlite3": "^12.0.0"
+    "better-sqlite3": "^12.0.0",
+    "electron-updater": "^6.8.9"
   },
   "devDependencies": {
     "electron": "^31.0.0",
@@ -26,6 +27,13 @@
   "build": {
     "appId": "com.hyojoonk.herbstockmanager",
     "productName": "HerbStockManager",
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "HyoJoonK",
+        "repo": "Herb-stock-manager"
+      }
+    ],
     "icon": "src/assets/icon.png",
     "directories": {
       "output": "dist"

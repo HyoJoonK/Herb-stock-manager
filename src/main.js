@@ -4,8 +4,9 @@
  * 어플리케이션 윈도우 생성 및 노드 통합 환경 설정.
  */
 
-const { app, BrowserWindow } = require("electron");
+const { app, BrowserWindow, dialog } = require("electron");
 const path = require("path");
+const { autoUpdater } = require("electron-updater");
 
 // 윈도우 OS 화면 배율 설정을 무시하고 기본 UI 배율(100%)로 강제 고정합니다.
 app.commandLine.appendSwitch("force-device-scale-factor", "1");
@@ -57,6 +58,7 @@ if (!gotTheLock) {
 
   app.whenReady().then(() => {
     createWindow();
+    setupAutoUpdater();
 
     app.on("activate", () => {
       if (BrowserWindow.getAllWindows().length === 0) {
@@ -64,6 +66,31 @@ if (!gotTheLock) {
       }
     });
   });
+}
+
+function setupAutoUpdater() {
+  if (!app.isPackaged) {
+    return;
+  }
+
+  // 업데이트 다운로드가 완료되었을 때
+  autoUpdater.on("update-downloaded", (info) => {
+    dialog.showMessageBox({
+      type: "info",
+      title: "업데이트 준비 완료",
+      message: `새로운 버전(${info.version})이 다운로드되었습니다. 어플리케이션을 재시작하여 업데이트를 적용하시겠습니까?`,
+      buttons: ["지금 재시작", "나중에"],
+      defaultId: 0,
+      cancelId: 1
+    }).then((result) => {
+      if (result.response === 0) {
+        autoUpdater.quitAndInstall();
+      }
+    });
+  });
+
+  // 업데이트 자동 확인 실행
+  autoUpdater.checkForUpdatesAndNotify();
 }
 
 app.on("window-all-closed", () => {
