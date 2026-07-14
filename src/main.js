@@ -56,6 +56,7 @@ if (!gotTheLock) {
     }
   });
 
+  app.whenReady().then(() => {
     createWindow();
     
     // 앱 초기 로딩 속도 최적화를 위해, UI가 완전히 그려진 5초 후 백그라운드 업데이트 확인을 실행합니다.
