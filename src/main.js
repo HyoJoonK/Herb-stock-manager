@@ -4,7 +4,7 @@
  * 어플리케이션 윈도우 생성 및 노드 통합 환경 설정.
  */
 
-const { app, BrowserWindow, dialog } = require("electron");
+const { app, BrowserWindow, dialog, ipcMain } = require("electron");
 const path = require("path");
 const { autoUpdater } = require("electron-updater");
 
@@ -26,10 +26,10 @@ function createWindow() {
     },
   });
 
-  // index.html 로드 (userDataPath를 쿼리 파라미터로 전달하여 렌더러에서 참조할 수 있도록 함)
+  // index.html 로드 (userDataPath 및 버전을 쿼리 파라미터로 전달하여 렌더러에서 참조할 수 있도록 함)
   const userDataPath = app.getPath("userData");
   win.loadFile(path.join(__dirname, "frontend/index.html"), {
-    query: { userDataPath },
+    query: { userDataPath, version: app.getVersion() },
   });
 
   // 메뉴바 숨김 (조제 전용 키보드 동선 집중)
@@ -68,6 +68,8 @@ if (!gotTheLock) {
   });
 }
 
+let isManualCheck = false;
+
 function setupAutoUpdater() {
   if (!app.isPackaged) {
     return;
@@ -89,9 +91,47 @@ function setupAutoUpdater() {
     });
   });
 
+  // 업데이트가 없을 때 (최신 버전일 때)
+  autoUpdater.on("update-not-available", (info) => {
+    if (isManualCheck) {
+      dialog.showMessageBox({
+        type: "info",
+        title: "업데이트 확인",
+        message: `현재 최신 버전(v${app.getVersion()})을 사용하고 있습니다.`
+      });
+      isManualCheck = false;
+    }
+  });
+
+  // 에러 발생 시
+  autoUpdater.on("error", (err) => {
+    if (isManualCheck) {
+      dialog.showMessageBox({
+        type: "error",
+        title: "업데이트 확인 실패",
+        message: `업데이트를 확인하는 중 오류가 발생했습니다: ${err.message}`
+      });
+      isManualCheck = false;
+    }
+  });
+
   // 업데이트 자동 확인 실행
   autoUpdater.checkForUpdatesAndNotify();
 }
+
+// 수동 업데이트 확인 IPC 리스너 등록
+ipcMain.on("manual-check-for-update", () => {
+  if (!app.isPackaged) {
+    dialog.showMessageBox({
+      type: "info",
+      title: "업데이트 확인",
+      message: "개발 모드에서는 업데이트를 확인할 수 없습니다."
+    });
+    return;
+  }
+  isManualCheck = true;
+  autoUpdater.checkForUpdates();
+});
 
 app.on("window-all-closed", () => {
   // macOS가 아닐 경우 프로세스 완전히 종료

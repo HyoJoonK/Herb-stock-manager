@@ -1309,8 +1309,25 @@ document.addEventListener('DOMContentLoaded', () => {
       settingsSupabaseUrl.value = savedUrl;
       settingsSupabaseKey.value = savedKey;
       
+      // 앱 버전 설정
+      const appVersionSpan = document.getElementById('appVersion');
+      if (appVersionSpan) {
+        const urlParams = new URLSearchParams(window.location.search);
+        const version = urlParams.get('version') || '1.2.0';
+        appVersionSpan.textContent = `v${version}`;
+      }
+
       settingsModal.classList.add('show');
     });
+
+    // 업데이트 확인 버튼 클릭 이벤트 바인딩
+    const btnCheckUpdate = document.getElementById('btnCheckUpdate');
+    if (btnCheckUpdate) {
+      btnCheckUpdate.addEventListener('click', () => {
+        const { ipcRenderer } = require('electron');
+        ipcRenderer.send('manual-check-for-update');
+      });
+    }
 
     btnSettingsCancel.addEventListener('click', () => {
       settingsModal.classList.remove('show');
