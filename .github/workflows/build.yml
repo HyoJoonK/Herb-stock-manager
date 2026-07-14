@@ -61,7 +61,6 @@ jobs:
             dist/*.exe
             dist/*.dmg
             dist/*.zip
-            dist/*.yml
           if-no-files-found: error
 
   release:
@@ -90,7 +89,7 @@ jobs:
       - name: Consolidate artifacts
         run: |
           mkdir dist
-          find dist-artifacts -type f \( -name "*.exe" -o -name "*.dmg" -o -name "*.zip" -o -name "*.yml" \) -exec cp {} dist/ \;
+          find dist-artifacts -type f \( -name "*.exe" -o -name "*.dmg" -o -name "*.zip" \) -exec cp {} dist/ \;
           ls -R dist
 
       - name: Create Release and Upload Assets
@@ -104,6 +103,5 @@ jobs:
             dist/*.exe
             dist/*.dmg
             dist/*.zip
-            dist/*.yml
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
