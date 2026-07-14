@@ -437,6 +437,24 @@
     </div>
   </div>
 
+  <!-- 카테고리 정보 수정 모달 -->
+  <div class="modal-overlay" id="editCategoryModal">
+    <div class="modal-content" style="width: 300px;">
+      <div class="modal-header">✏️ 카테고리 수정</div>
+      <div class="modal-form">
+        <input type="hidden" id="editCategoryId">
+        <div class="input-group">
+          <label for="editCategoryName">카테고리명</label>
+          <input type="text" id="editCategoryName" placeholder="예: 감기약" autocomplete="off">
+        </div>
+        <div class="modal-actions">
+          <button class="btn" id="btnEditCategoryCancel">취소</button>
+          <button class="btn btn-primary" id="btnEditCategorySave">저장</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <!-- 처방 기록 상세 조회 모달 -->
   <div class="modal-overlay" id="prescriptionDetailModal">
     <div class="modal-content" style="width: 450px;">
@@ -535,6 +553,12 @@
   <div class="context-menu" id="prescContextMenu">
     <div class="context-menu-item" id="ctxPrescEdit">✏️ 처방 수정</div>
     <div class="context-menu-item" id="ctxPrescDelete" style="color: var(--color-accent);">🗑️ 처방 삭제</div>
+  </div>
+
+  <!-- 카테고리 우클릭 퀵 컨텍스트 메뉴 -->
+  <div class="context-menu" id="categoryContextMenu">
+    <div class="context-menu-item" id="ctxCategoryEdit">✏️ 카테고리명 수정</div>
+    <div class="context-menu-item" id="ctxCategoryDelete" style="color: var(--color-accent);">🗑️ 카테고리 삭제</div>
   </div>
 
   <!-- Toast 알림 배너 -->

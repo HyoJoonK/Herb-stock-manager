@@ -851,6 +851,48 @@ class InventoryManager {
     }
   }
 
+  updateCategory(categoryId, name) {
+    const catId = Number(categoryId);
+    if (catId === 1) throw new Error('기본 카테고리는 수정할 수 없습니다.');
+
+    const cleanName = name.trim();
+    if (!cleanName) throw new Error('카테고리명은 비어둘 수 없습니다.');
+
+    try {
+      const exists = this.db.prepare('SELECT id FROM categories WHERE name = ? AND id != ?').get(cleanName, catId);
+      if (exists) throw new Error('이미 존재하는 카테고리명입니다.');
+
+      this.db.prepare("UPDATE categories SET name = ?, updated_at = ? WHERE id = ?").run(cleanName, this.getAdjustedSqliteTime(), catId);
+
+      this.syncItemToSupabase('categories', catId).catch(err => console.error('[Supabase Sync Error] update categories:', err));
+    } catch (err) {
+      throw err;
+    }
+  }
+
+  deleteCategory(categoryId) {
+    const catId = Number(categoryId);
+    if (catId === 1) throw new Error('기본 카테고리는 삭제할 수 없습니다.');
+
+    try {
+      const medicineIds = this.db.prepare('SELECT id FROM medicines WHERE category_id = ?').all(catId).map(row => row.id);
+
+      this.db.transaction(() => {
+        this.recordDeleted('categories', catId);
+        this.db.prepare('DELETE FROM categories WHERE id = ?').run(catId);
+        this.db.prepare("UPDATE medicines SET category_id = 1, updated_at = ? WHERE category_id = ?").run(this.getAdjustedSqliteTime(), catId);
+      })();
+
+      this.syncDeletedToSupabase('categories', catId).catch(err => console.error('[Supabase Sync Error] delete categories:', err));
+      
+      for (const medId of medicineIds) {
+        this.syncItemToSupabase('medicines', medId).catch(err => console.error('[Supabase Sync Error] update medicines after category delete:', err));
+      }
+    } catch (err) {
+      throw err;
+    }
+  }
+
   getAllCategories() {
     return this.db.prepare('SELECT * FROM categories ORDER BY id ASC').all();
   }

@@ -31,6 +31,7 @@ let currentPrescriptionItems = []; // 처방 바구니 [{ id, name, pack_size, a
 let batchEditItems = new Map(); // 일괄 편집 대상 약재 맵 (id => medData)
 let contextTargetMedId = null; // 우클릭 대상 약재 ID
 let contextTargetPrescId = null; // 우클릭 대상 처방 ID
+let contextTargetCategoryId = null; // 우클릭 대상 카테고리 ID
 let isPrescriptionEditMode = false; // 처방 수정 모드 활성화 여부
 let currentEditingPrescId = null; // 현재 수정 중인 처방 ID
 
@@ -840,6 +841,42 @@ function handleAddCategorySave() {
   }
 }
 
+function handleEditCategorySave() {
+  const idStr = document.getElementById('editCategoryId').value;
+  const input = document.getElementById('editCategoryName');
+  const name = input.value.trim();
+
+  if (!name) {
+    alert('카테고리명을 입력해 주세요.');
+    return;
+  }
+  if (!idStr) return;
+
+  try {
+    const categoryId = parseInt(idStr);
+    dbManager.updateCategory(categoryId, name);
+    showToast(`✨ 카테고리가 "${name}"(으)로 수정되었습니다.`);
+
+    // 모달 닫기
+    document.getElementById('editCategoryModal').classList.remove('show');
+    input.value = '';
+    contextTargetCategoryId = null;
+
+    // 각 탭별 카테고리 컨테이너 리렌더링
+    const containers = ['inquiryCategoryContainer', 'prescriptionCategoryContainer', 'batchCategoryContainer'];
+    containers.forEach(cId => {
+      const el = document.getElementById(cId);
+      if (el) {
+        renderCategoryTabs(el);
+      }
+    });
+
+    renderMedicineList();
+  } catch (err) {
+    alert(`카테고리 수정 실패: ${err.message}`);
+  }
+}
+
 // ----------------------------------------------------
 // 약재 수동 추가 및 우클릭 수정 폼 제어 (모달 공유)
 // ----------------------------------------------------
@@ -1428,6 +1465,14 @@ document.addEventListener('DOMContentLoaded', () => {
   });
   document.getElementById('btnCategorySave').addEventListener('click', handleAddCategorySave);
 
+  // 카테고리 수정 취소/저장
+  document.getElementById('btnEditCategoryCancel').addEventListener('click', () => {
+    document.getElementById('editCategoryModal').classList.remove('show');
+    document.getElementById('editCategoryName').value = '';
+    contextTargetCategoryId = null;
+  });
+  document.getElementById('btnEditCategorySave').addEventListener('click', handleEditCategorySave);
+
   // 약재 추가/수정 모달 취소/저장
   document.getElementById('btnEditMedCancel').addEventListener('click', () => {
     document.getElementById('editMedicineModal').classList.remove('show');
@@ -1501,6 +1546,67 @@ document.addEventListener('DOMContentLoaded', () => {
         }
       }
       contextTargetPrescId = null;
+    }
+  });
+
+  // ----------------------------------------------------
+  // 카테고리 우클릭 컨텍스트 메뉴 액션 연동
+  // ----------------------------------------------------
+  document.getElementById('ctxCategoryEdit').addEventListener('click', () => {
+    if (contextTargetCategoryId !== null) {
+      const cat = dbManager.getAllCategories().find(c => c.id === contextTargetCategoryId);
+      if (cat) {
+        document.getElementById('editCategoryId').value = cat.id;
+        document.getElementById('editCategoryName').value = cat.name;
+        document.getElementById('editCategoryModal').classList.add('show');
+        setTimeout(() => {
+          document.getElementById('editCategoryName').focus();
+        }, 50);
+      }
+    }
+  });
+
+  document.getElementById('ctxCategoryDelete').addEventListener('click', () => {
+    if (contextTargetCategoryId !== null) {
+      const cat = dbManager.getAllCategories().find(c => c.id === contextTargetCategoryId);
+      if (cat) {
+        if (confirm(`⚠️ 정말로 "${cat.name}" 카테고리를 삭제하시겠습니까?\n카테고리가 삭제되면 이 카테고리에 속한 약재들은 모두 '미분류' 카테고리로 이동됩니다.`)) {
+          try {
+            dbManager.deleteCategory(contextTargetCategoryId);
+            showToast(`🗑️ "${cat.name}" 카테고리가 삭제되었습니다.`, true);
+
+            // UI 갱신
+            const containers = ['inquiryCategoryContainer', 'prescriptionCategoryContainer', 'batchCategoryContainer'];
+            containers.forEach(cId => {
+              const el = document.getElementById(cId);
+              if (el) renderCategoryTabs(el);
+            });
+            renderMedicineList();
+          } catch (err) {
+            alert(`카테고리 삭제 실패: ${err.message}`);
+          }
+        }
+      }
+      contextTargetCategoryId = null;
+    }
+  });
+
+  // 카테고리 탭 우클릭 감지 (이벤트 위임)
+  document.addEventListener('contextmenu', (e) => {
+    if (e.target.classList.contains('category-tab')) {
+      const catId = e.target.dataset.categoryId;
+      if (catId === '전체') return; // '전체' 탭은 수정/삭제 불가
+
+      const parsedId = parseInt(catId);
+      if (parsedId === 1) {
+        e.preventDefault();
+        showToast('ℹ️ 기본 카테고리는 수정하거나 삭제할 수 없습니다.');
+        return;
+      }
+
+      e.preventDefault();
+      contextTargetCategoryId = parsedId;
+      showContextMenu('categoryContextMenu', e.pageX, e.pageY);
     }
   });
 
