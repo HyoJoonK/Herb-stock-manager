@@ -4,7 +4,7 @@
  * 어플리케이션 윈도우 생성 및 노드 통합 환경 설정.
  */
 
-const { app, BrowserWindow, ipcMain, dialog } = require("electron");
+const { app, BrowserWindow, Menu, ipcMain, dialog } = require("electron");
 const path = require("path");
 const { autoUpdater } = require("electron-updater");
 
@@ -115,6 +115,9 @@ ipcMain.on("check-for-updates-manual", () => {
 });
 
 function createWindow() {
+  // 애플리케이션의 상단 메뉴 전체 제거 (Alt 키로 인한 포커스 유실 원천 차단)
+  Menu.setApplicationMenu(null);
+
   const win = new BrowserWindow({
     width: 1280,
     height: 850,
@@ -123,6 +126,7 @@ function createWindow() {
     title: "약재 재고 관리 시스템 (Herb Stock)",
     icon: path.join(__dirname, "assets/icon.png"),
     show: false, // 렌더러가 완전히 준비되기 전에 빈 창이 노출되지 않도록 함
+    autoHideMenuBar: true, // Windows/Linux에서 Alt 키가 눌려도 메뉴바 포커스 방지
     webPreferences: {
       // 렌더러에서 직접 DB 연동 모듈을 불러오기 위해 NodeIntegration을 활성화합니다.
       nodeIntegration: true,
@@ -142,8 +146,7 @@ function createWindow() {
     query: { userDataPath },
   });
 
-  // 메뉴바 숨김 (조제 전용 키보드 동선 집중)
-  win.setMenuBarVisibility(false);
+
 
   // 윈도우가 화면에 보일 준비가 완료되었을 때만 표시
   win.once("ready-to-show", () => {

@@ -66,6 +66,15 @@ class QuickSearchEngine {
         setTimeout(() => this.elements.popupInput.focus(), 10);
       }
     });
+
+    // 윈도우 전체에 포커스가 다시 들어왔을 때 포커스 복구 안전장치
+    window.addEventListener('focus', () => {
+      // 모달이나 팝업창이 없는 기본 상태이면서 검색창에 포커스가 없는 경우 검색창으로 포커스 강제
+      const activeModal = document.querySelector('.modal-overlay.show, .popup-overlay.show');
+      if (!activeModal && this.state === 'search' && document.activeElement !== this.elements.searchInput) {
+        this.elements.searchInput.focus();
+      }
+    });
     
     this.setFocusState('search');
   }
@@ -129,6 +138,42 @@ class QuickSearchEngine {
     }
 
     const key = e.key;
+
+    // 우측 메인 패널(.right-main-panel) 내부 입력 칸에 포커스가 있는 경우의 단축키 처리
+    const activeElement = document.activeElement;
+    const isFocusedInRightPanel = activeElement && activeElement.closest('.right-main-panel');
+
+    if (isFocusedInRightPanel) {
+      // 1. 글로벌 단축키 Alt + 1~4 (메인 탭 메뉴 강제 이동)는 우측 패널에서도 여전히 동작
+      if (e.altKey && ['1', '2', '3', '4'].includes(key)) {
+        e.preventDefault();
+        const tabIndex = parseInt(key) - 1;
+        this.activeTab = tabIndex;
+        this.callbacks.onTabChange(tabIndex);
+        this.setFocusState('search');
+        return;
+      }
+      // 2. 글로벌 단축키 Ctrl+F / Cmd+F (검색창 이동 및 전체선택)도 동작
+      if ((e.ctrlKey || e.metaKey) && key.toLowerCase() === 'f') {
+        e.preventDefault();
+        this.setFocusState('search');
+        return;
+      }
+      // 3. / 키 입력 시 검색창으로 복귀 (단, 입력필드 등에서 / 가 적히지 않도록 preventDefault)
+      if (key === '/') {
+        e.preventDefault();
+        this.setFocusState('search');
+        return;
+      }
+      // 4. ESC 키 입력 시 검색창으로 복귀
+      if (key === 'Escape') {
+        e.preventDefault();
+        this.setFocusState('search');
+        return;
+      }
+      // 그 외의 키(Tab, Enter, 방향키 등)는 우측 패널 내부 동작(Tab 이동, 인풋 입력 등)을 위해 가로채지 않고 패스
+      return;
+    }
 
     // ----------------------------------------------------
     // 글로벌 단축키 1: Alt + 1~4 (메인 탭 메뉴 강제 이동)
@@ -293,8 +338,18 @@ class QuickSearchEngine {
           // [조회] 탭: 우측에 상세 정보 및 그래프 표시 콜백 트리거
           this.callbacks.onInquiryMed(medicineId);
         } else if (this.activeTab === 1) {
-          // [처방] 탭: g수 입력 팝업 띄우기
-          this.openQuantityPopup(selectedItem);
+          // [처방] 탭: g수 입력 팝업 띄우기 (Shift 다중 선택 혹은 Shift+Enter 시 팝업 생략)
+          if (this.selectedIds.size > 1 || e.shiftKey) {
+            if (this.selectedIds.size > 1) {
+              this.selectedIds.forEach(id => this.callbacks.onAddToPrescription(id, 10));
+            } else {
+              this.callbacks.onAddToPrescription(medicineId, 10);
+            }
+            this.selectedIds.clear();
+            this.callbacks.onSelectionChange(this.selectedIds);
+          } else {
+            this.openQuantityPopup(selectedItem);
+          }
         } else if (this.activeTab === 3) {
           // [일괄 작업] 탭: 우측 테이블에 복수 또는 단일 약재 추가
           if (this.selectedIds.size > 1) {
@@ -303,12 +358,25 @@ class QuickSearchEngine {
           } else {
             this.callbacks.onAddToBatch(medicineId);
           }
+          this.selectedIds.clear();
+          this.callbacks.onSelectionChange(this.selectedIds);
         }
       }
 
     } else if (e.key === 'Escape') {
       e.preventDefault();
       this.setFocusState('search');
+    } else if (e.key === 'Insert') {
+      e.preventDefault();
+      if (this.activeTab === 0 || this.activeTab === 3) {
+        if (this.currentListIndex >= 0 && this.currentListIndex < items.length) {
+          const selectedItem = items[this.currentListIndex];
+          const medicineId = parseInt(selectedItem.dataset.id);
+          if (this.callbacks.onEditMed) {
+            this.callbacks.onEditMed(medicineId);
+          }
+        }
+      }
     } else if (e.key === 'Tab') {
       e.preventDefault();
       if (e.shiftKey) {

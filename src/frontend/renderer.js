@@ -1103,6 +1103,56 @@ document.addEventListener('DOMContentLoaded', () => {
         renderBatchTable();
       }
     });
+
+    // 방향키 상하좌우를 통한 셀(입력창) 간 포커스 그리드 이동 구현
+    batchTbody.addEventListener('keydown', (e) => {
+      const target = e.target;
+      if (!['INPUT', 'SELECT'].includes(target.tagName)) return;
+
+      const key = e.key;
+      if (!['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(key)) return;
+
+      const tr = target.closest('tr');
+      if (!tr) return;
+
+      // 현재 tr 안의 활성 입력 및 선택 요소 리스트
+      const inputs = Array.from(tr.querySelectorAll('input:not([type="hidden"]), select'));
+      const colIndex = inputs.indexOf(target);
+
+      if (key === 'ArrowLeft') {
+        if (colIndex > 0) {
+          e.preventDefault();
+          inputs[colIndex - 1].focus();
+          if (inputs[colIndex - 1].select) inputs[colIndex - 1].select();
+        }
+      } else if (key === 'ArrowRight') {
+        if (colIndex < inputs.length - 1) {
+          e.preventDefault();
+          inputs[colIndex + 1].focus();
+          if (inputs[colIndex + 1].select) inputs[colIndex + 1].select();
+        }
+      } else if (key === 'ArrowUp') {
+        const prevTr = tr.previousElementSibling;
+        if (prevTr) {
+          e.preventDefault();
+          const prevInputs = Array.from(prevTr.querySelectorAll('input:not([type="hidden"]), select'));
+          if (prevInputs[colIndex]) {
+            prevInputs[colIndex].focus();
+            if (prevInputs[colIndex].select) prevInputs[colIndex].select();
+          }
+        }
+      } else if (key === 'ArrowDown') {
+        const nextTr = tr.nextElementSibling;
+        if (nextTr) {
+          e.preventDefault();
+          const nextInputs = Array.from(nextTr.querySelectorAll('input:not([type="hidden"]), select'));
+          if (nextInputs[colIndex]) {
+            nextInputs[colIndex].focus();
+            if (nextInputs[colIndex].select) nextInputs[colIndex].select();
+          }
+        }
+      }
+    });
   }
 
   const searchInput = document.getElementById('inquirySearchInput'); // 초기 포커스 대행
@@ -1189,6 +1239,9 @@ document.addEventListener('DOMContentLoaded', () => {
     },
     onAddToBatch: (medId) => {
       addMedToBatch(medId);
+    },
+    onEditMed: (medId) => {
+      openEditMedicineModal(medId);
     },
     onSelectionChange: (selectedIds) => {
       // 복수 선택 상태 스타일을 렌더링에 동기화 반영
@@ -1765,17 +1818,18 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   // ----------------------------------------------------
-  // 모달 키보드 편의성 연동 (Esc로 닫기, Tab 키 포커스 가두기)
+  // 모달 키보드 편의성 연동 (Esc로 닫기, Tab 키 포커스 가두기, Enter로 저장)
   // ----------------------------------------------------
   document.addEventListener('keydown', (e) => {
     // 1. Esc 키로 모든 모달 닫기
     if (e.key === 'Escape') {
-      const modals = ['editMedicineModal', 'addCategoryModal', 'prescriptionDetailModal', 'quantityPopup', 'settingsModal'];
+      const modals = ['editMedicineModal', 'addCategoryModal', 'editCategoryModal', 'prescriptionDetailModal', 'quantityPopup', 'settingsModal'];
       modals.forEach(id => {
         const el = document.getElementById(id);
         if (el && el.classList.contains('show')) {
           el.classList.remove('show');
           if (id === 'addCategoryModal') document.getElementById('newCategoryName').value = '';
+          if (id === 'editCategoryModal') document.getElementById('editCategoryName').value = '';
           if (id === 'quantityPopup') document.getElementById('popupQuantityInput').value = '';
         }
       });
@@ -1785,7 +1839,19 @@ document.addEventListener('DOMContentLoaded', () => {
       if (prescCtx) prescCtx.style.display = 'none';
     }
 
-    // 2. Tab / Shift+Tab 포커스 트랩 (Focus Trap)
+    // 2. 모달 활성화 시 Enter 입력 처리 (저장/확인)
+    if (e.key === 'Enter') {
+      const activeModal = document.querySelector('.modal-overlay.show');
+      if (activeModal && document.activeElement.tagName !== 'TEXTAREA') {
+        e.preventDefault();
+        const saveBtn = activeModal.querySelector('.btn-primary, #btnViewPrescClose');
+        if (saveBtn) {
+          saveBtn.click();
+        }
+      }
+    }
+
+    // 3. Tab / Shift+Tab 포커스 트랩 (Focus Trap)
     if (e.key === 'Tab') {
       const activeModal = Array.from(document.querySelectorAll('.modal-overlay.show, .popup-overlay.show'))[0];
       if (activeModal) {
@@ -1821,6 +1887,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // 업데이트 기능 초기화
   initUpdateFeatures();
+
+  // 숫자 입력 필드 선두 0 제거기 및 편의성 기능 초기화
+  initNumberInputZeroStripper();
 
   // 초기 로딩 탭 실행
   switchTab('inquiry');
@@ -1883,4 +1952,61 @@ function initUpdateFeatures() {
         break;
     }
   });
+}
+
+/**
+ * 모든 type="number" 입력 필드에서 선두의 의미 없는 0을 제거하고,
+ * 포커스 시 자동으로 전체 선택되도록 돕는 편의성 기능 초기화.
+ */
+function initNumberInputZeroStripper() {
+  function stripLeadingZeros(valueStr) {
+    if (typeof valueStr !== 'string' || valueStr === '') return valueStr;
+
+    const isNegative = valueStr.startsWith('-');
+    let numStr = isNegative ? valueStr.slice(1) : valueStr;
+
+    if (/^0+$/.test(numStr)) {
+      numStr = '0';
+    } else if (/^0{2,}\./.test(numStr)) {
+      numStr = numStr.replace(/^0+/, '0');
+    } else if (/^0+[1-9]/.test(numStr)) {
+      numStr = numStr.replace(/^0+/, '');
+    }
+
+    return isNegative ? '-' + numStr : numStr;
+  }
+
+  // 1. 실시간 입력(input) 시 선두 0 제거
+  document.addEventListener('input', (e) => {
+    if (e.target && e.target.tagName === 'INPUT' && e.target.type === 'number') {
+      const val = e.target.value;
+      const cleaned = stripLeadingZeros(val);
+      if (val !== cleaned) {
+        e.target.value = cleaned;
+      }
+    }
+  });
+
+  // 2. 포커스 해제(blur) 시 최종 선두 0 정리 및 변경 이벤트 전파
+  document.addEventListener('blur', (e) => {
+    if (e.target && e.target.tagName === 'INPUT' && e.target.type === 'number') {
+      const val = e.target.value;
+      const cleaned = stripLeadingZeros(val);
+      if (val !== cleaned) {
+        e.target.value = cleaned;
+        e.target.dispatchEvent(new Event('change', { bubbles: true }));
+      }
+    }
+  }, true); // blur 이벤트는 버블링되지 않으므로 캡처링 단계에서 캐치
+
+  // 3. 포커스 시 전체 선택 (기존 0 또는 숫자를 쉽게 덮어쓸 수 있도록 지원)
+  document.addEventListener('focus', (e) => {
+    if (e.target && e.target.tagName === 'INPUT' && e.target.type === 'number') {
+      setTimeout(() => {
+        if (document.activeElement === e.target && e.target.select) {
+          e.target.select();
+        }
+      }, 0); // 마우스 클릭 이벤트 완료 후 실행을 위한 0ms 지연
+    }
+  }, true); // focus 이벤트는 버블링되지 않으므로 캡처링 단계에서 캐치
 }
