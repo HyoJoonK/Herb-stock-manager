@@ -499,14 +499,23 @@ class QuickSearchEngine {
     // 전체 포커스 클래스 제거
     document.querySelectorAll('.keyboard-focused').forEach(el => el.classList.remove('keyboard-focused'));
 
-    if (newState === 'search') {
+    if (newState === 'search' && this.elements.searchInput) {
       this.elements.searchInput.classList.add('keyboard-focused');
+      
+      // 한글 IME composition 버퍼 초기화를 위해 value 재할당
+      const val = this.elements.searchInput.value;
+      this.elements.searchInput.value = '';
+      this.elements.searchInput.value = val;
+
       this.elements.searchInput.focus();
       this.elements.searchInput.select();
       
       // 모달 닫힘 등으로 브라우저가 포커스를 바디로 강제 초기화하는 현상을 방어하기 위한 비동기 지연 포커스 안전장치
       setTimeout(() => {
-        if (this.state === 'search' && document.activeElement !== this.elements.searchInput) {
+        if (this.state === 'search' && this.elements.searchInput && document.activeElement !== this.elements.searchInput) {
+          const innerVal = this.elements.searchInput.value;
+          this.elements.searchInput.value = '';
+          this.elements.searchInput.value = innerVal;
           this.elements.searchInput.focus();
           this.elements.searchInput.select();
         }

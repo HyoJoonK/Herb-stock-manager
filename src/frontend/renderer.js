@@ -1175,6 +1175,12 @@ document.addEventListener('DOMContentLoaded', () => {
           searchEngine.setFocusState('search');
         }
       });
+      inputEl.addEventListener('blur', () => {
+        // 한글 IME composition 세션을 강제로 안전하게 종료하기 위해 value 재할당
+        const val = inputEl.value;
+        inputEl.value = '';
+        inputEl.value = val;
+      });
     }
   });
 
@@ -1183,6 +1189,12 @@ document.addEventListener('DOMContentLoaded', () => {
   if (pastPrescSearch) {
     pastPrescSearch.addEventListener('input', () => {
       renderPastPrescriptions();
+    });
+    pastPrescSearch.addEventListener('blur', () => {
+      // 한글 IME composition 세션을 강제로 안전하게 종료하기 위해 value 재할당
+      const val = pastPrescSearch.value;
+      pastPrescSearch.value = '';
+      pastPrescSearch.value = val;
     });
   }
 
