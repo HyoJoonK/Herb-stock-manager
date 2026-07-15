@@ -24,6 +24,7 @@ class QuickSearchEngine {
       onTabChange: callbacks.onTabChange,               // 탭 변경 콜백 (Alt+1~4 대응)
       onInquiryMed: callbacks.onInquiryMed,             // 조회 탭 엔터 콜백
       onAddToBatch: callbacks.onAddToBatch,             // 일괄 작업 탭 엔터 콜백
+      onEditMed: callbacks.onEditMed,                   // 약재 정보 수정 모달 콜백
       onSelectionChange: callbacks.onSelectionChange    // 다중 선택 상태 변경 콜백 (전달되는 인자는 Set<number> 타입입니다)
     };
 
