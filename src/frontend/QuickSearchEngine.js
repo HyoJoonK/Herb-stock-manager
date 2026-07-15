@@ -366,7 +366,7 @@ class QuickSearchEngine {
     } else if (e.key === 'Escape') {
       e.preventDefault();
       this.setFocusState('search');
-    } else if (e.key === 'Insert') {
+    } else if (e.key.toLowerCase() === 'insert' || e.key.toLowerCase() === 'e' || e.key === 'ㄷ' || e.code === 'KeyE') {
       e.preventDefault();
       if (this.activeTab === 0 || this.activeTab === 3) {
         if (this.currentListIndex >= 0 && this.currentListIndex < items.length) {

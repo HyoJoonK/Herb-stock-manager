@@ -254,12 +254,12 @@
           <div style="display: flex; gap: 10px; align-items: center;">
             <div class="input-group" style="flex-direction: row; align-items: center; gap: 6px;">
               <label style="white-space: nowrap; font-size:12px;">배송 리드타임:</label>
-              <input type="number" id="predLeadTime" value="7" style="width: 50px; padding: 4px;" min="1">
+              <input type="text" class="numeric-input" inputmode="numeric" id="predLeadTime" value="7" style="width: 50px; padding: 4px;">
               <span style="font-size:12px;">일</span>
             </div>
             <div class="input-group" style="flex-direction: row; align-items: center; gap: 6px;">
               <label style="white-space: nowrap; font-size:12px;">소모 분석기간:</label>
-              <input type="number" id="predAnalysisDays" value="30" style="width: 60px; padding: 4px;" min="7" max="90">
+              <input type="text" class="numeric-input" inputmode="numeric" id="predAnalysisDays" value="30" style="width: 60px; padding: 4px;">
               <span style="font-size:12px;">일</span>
             </div>
             <button class="btn btn-primary" id="btnSyncPredictor">동적 안전재고 갱신</button>
@@ -364,7 +364,7 @@
       <div class="popup-med-stock" id="popupMedStock" style="font-size: 12px; color: var(--color-text-muted);">총 2,500g (5봉지 남음)</div>
       
       <div style="display: flex; align-items: center; justify-content: center; gap: 8px; margin: 16px 0;">
-        <input type="number" id="popupQuantityInput" value="10" min="0.1" step="0.1" 
+        <input type="text" class="numeric-input" inputmode="decimal" id="popupQuantityInput" value="10" 
                style="width: 100px; padding: 8px; border: 2px solid var(--color-primary-light); border-radius: var(--radius-md); font-size: 20px; font-weight: 700; text-align: center;">
         <span style="font-size: 18px; font-weight: 600;">g</span>
       </div>
@@ -394,19 +394,19 @@
         </div>
         <div class="input-group">
           <label for="editMedPackSize">팩 기본 규격 g수 (필수)</label>
-          <input type="number" id="editMedPackSize" placeholder="예: 500" value="500" min="1">
+          <input type="text" class="numeric-input" inputmode="decimal" id="editMedPackSize" placeholder="예: 500" value="500">
         </div>
         <div class="input-group">
           <label for="editMedUnopened">미개봉 팩(봉지) 수</label>
-          <input type="number" id="editMedUnopened" placeholder="예: 3" value="0" min="0">
+          <input type="text" class="numeric-input" inputmode="numeric" id="editMedUnopened" placeholder="예: 3" value="0">
         </div>
         <div class="input-group">
           <label for="editMedRemain">개봉 팩 잔량 g수</label>
-          <input type="number" id="editMedRemain" placeholder="예: 250" value="0" min="0">
+          <input type="text" class="numeric-input" inputmode="decimal" id="editMedRemain" placeholder="예: 250" value="0">
         </div>
         <div class="input-group">
           <label for="editMedSafety">안전 재고 기준 g수</label>
-          <input type="number" id="editMedSafety" placeholder="예: 1500" value="500" min="0">
+          <input type="text" class="numeric-input" inputmode="decimal" id="editMedSafety" placeholder="예: 1500" value="500">
         </div>
         <div class="input-group">
           <label for="editMedUnit">표시 단위</label>

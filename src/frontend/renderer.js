@@ -532,8 +532,8 @@ function renderPrescription() {
       <td style="font-weight:700; color:var(--color-primary);">${item.name}</td>
       <td style="color:var(--color-text-muted);">${item.pack_size}g 기준</td>
       <td>
-        <input type="number" value="${item.amount}" min="0.1" step="0.1" 
-               class="presc-item-amount-input"
+        <input type="text" value="${item.amount}" 
+               class="presc-item-amount-input numeric-input" inputmode="decimal"
                style="width: 70px; padding: 4px; border: 1px solid var(--color-border); border-radius: 4px; text-align: center;"> g
       </td>
       <td style="text-align: center;">
@@ -736,10 +736,10 @@ function renderBatchTable() {
           ${catOptions}
         </select>
       </td>
-      <td><input type="number" class="batch-pack" value="${item.pack_size}" min="1" step="0.1"></td>
-      <td><input type="number" class="batch-unopened" value="${item.unopened_packs}" min="0"></td>
-      <td><input type="number" class="batch-remain" value="${item.opened_pack_remain}" min="0" step="0.1"></td>
-      <td><input type="number" class="batch-safety" value="${item.safety_stock}" min="0" step="10"></td>
+      <td><input type="text" class="batch-pack numeric-input" inputmode="decimal" value="${item.pack_size}"></td>
+      <td><input type="text" class="batch-unopened numeric-input" inputmode="numeric" value="${item.unopened_packs}"></td>
+      <td><input type="text" class="batch-remain numeric-input" inputmode="decimal" value="${item.opened_pack_remain}"></td>
+      <td><input type="text" class="batch-safety numeric-input" inputmode="decimal" value="${item.safety_stock}"></td>
       <td><input type="text" class="batch-unit" value="${item.unit}" style="width:40px;"></td>
       <td>
         <span class="batch-remove-btn" style="cursor:pointer;">❌</span>
@@ -1955,8 +1955,8 @@ function initUpdateFeatures() {
 }
 
 /**
- * 모든 type="number" 입력 필드에서 선두의 의미 없는 0을 제거하고,
- * 포커스 시 자동으로 전체 선택되도록 돕는 편의성 기능 초기화.
+ * 모든 type="number" 및 class="numeric-input" 입력 필드에서 숫자가 아닌 값을 필터링하고,
+ * 선두의 의미 없는 0을 제거하며, 포커스 시 자동으로 전체 선택되도록 돕는 편의성 기능 초기화.
  */
 function initNumberInputZeroStripper() {
   function stripLeadingZeros(valueStr) {
@@ -1976,12 +1976,38 @@ function initNumberInputZeroStripper() {
     return isNegative ? '-' + numStr : numStr;
   }
 
-  // 1. 실시간 입력(input) 시 선두 0 제거
+  function isNumericInput(target) {
+    return target && target.tagName === 'INPUT' && 
+      (target.type === 'number' || target.classList.contains('numeric-input'));
+  }
+
+  function sanitizeValue(target, val) {
+    if (target.type === 'number') return val;
+    
+    const inputmode = target.getAttribute('inputmode');
+    if (inputmode === 'decimal') {
+      // 숫자와 마침표(.)만 허용
+      let cleaned = val.replace(/[^0-9.]/g, '');
+      // 마침표가 여러 개 있으면 첫 번째 것만 유지
+      const dotIndex = cleaned.indexOf('.');
+      if (dotIndex !== -1) {
+        cleaned = cleaned.slice(0, dotIndex + 1) + cleaned.slice(dotIndex + 1).replace(/\./g, '');
+      }
+      return cleaned;
+    } else if (inputmode === 'numeric') {
+      // 숫자만 허용
+      return val.replace(/[^0-9]/g, '');
+    }
+    return val;
+  }
+
+  // 1. 실시간 입력(input) 시 필터링 및 선두 0 제거
   document.addEventListener('input', (e) => {
-    if (e.target && e.target.tagName === 'INPUT' && e.target.type === 'number') {
-      const val = e.target.value;
+    if (isNumericInput(e.target)) {
+      let val = e.target.value;
+      val = sanitizeValue(e.target, val);
       const cleaned = stripLeadingZeros(val);
-      if (val !== cleaned) {
+      if (e.target.value !== cleaned) {
         e.target.value = cleaned;
       }
     }
@@ -1989,10 +2015,18 @@ function initNumberInputZeroStripper() {
 
   // 2. 포커스 해제(blur) 시 최종 선두 0 정리 및 변경 이벤트 전파
   document.addEventListener('blur', (e) => {
-    if (e.target && e.target.tagName === 'INPUT' && e.target.type === 'number') {
-      const val = e.target.value;
+    if (isNumericInput(e.target)) {
+      let val = e.target.value;
+      val = sanitizeValue(e.target, val);
+      
+      // 소수점 입력창인데 마침표로 끝나는 경우 정제
+      if (e.target.type !== 'number' && e.target.getAttribute('inputmode') === 'decimal') {
+        if (val === '.') val = '';
+        else if (val.endsWith('.')) val = val.slice(0, -1);
+      }
+
       const cleaned = stripLeadingZeros(val);
-      if (val !== cleaned) {
+      if (e.target.value !== cleaned) {
         e.target.value = cleaned;
         e.target.dispatchEvent(new Event('change', { bubbles: true }));
       }
@@ -2001,7 +2035,7 @@ function initNumberInputZeroStripper() {
 
   // 3. 포커스 시 전체 선택 (기존 0 또는 숫자를 쉽게 덮어쓸 수 있도록 지원)
   document.addEventListener('focus', (e) => {
-    if (e.target && e.target.tagName === 'INPUT' && e.target.type === 'number') {
+    if (isNumericInput(e.target)) {
       setTimeout(() => {
         if (document.activeElement === e.target && e.target.select) {
           e.target.select();
