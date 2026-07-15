@@ -994,6 +994,9 @@ function handleEditMedSave() {
     document.getElementById('editMedicineModal').classList.remove('show');
     renderMedicineList();
     renderPredictView();
+    if (searchEngine) {
+      searchEngine.setFocusState('search');
+    }
   } catch (err) {
     alert(`저장 실패: ${err.message}`);
   }
@@ -1530,6 +1533,9 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('btnEditMedCancel').addEventListener('click', () => {
     document.getElementById('editMedicineModal').classList.remove('show');
     contextTargetMedId = null;
+    if (searchEngine) {
+      searchEngine.setFocusState('search');
+    }
   });
   document.getElementById('btnEditMedSave').addEventListener('click', handleEditMedSave);
 
@@ -1823,11 +1829,13 @@ document.addEventListener('DOMContentLoaded', () => {
   document.addEventListener('keydown', (e) => {
     // 1. Esc 키로 모든 모달 닫기
     if (e.key === 'Escape') {
+      let closedMedModal = false;
       const modals = ['editMedicineModal', 'addCategoryModal', 'editCategoryModal', 'prescriptionDetailModal', 'quantityPopup', 'settingsModal'];
       modals.forEach(id => {
         const el = document.getElementById(id);
         if (el && el.classList.contains('show')) {
           el.classList.remove('show');
+          if (id === 'editMedicineModal') closedMedModal = true;
           if (id === 'addCategoryModal') document.getElementById('newCategoryName').value = '';
           if (id === 'editCategoryModal') document.getElementById('editCategoryName').value = '';
           if (id === 'quantityPopup') document.getElementById('popupQuantityInput').value = '';
@@ -1837,6 +1845,10 @@ document.addEventListener('DOMContentLoaded', () => {
       const prescCtx = document.getElementById('prescContextMenu');
       if (medCtx) medCtx.style.display = 'none';
       if (prescCtx) prescCtx.style.display = 'none';
+
+      if (closedMedModal && searchEngine) {
+        searchEngine.setFocusState('search');
+      }
     }
 
     // 2. 모달 활성화 시 Enter 입력 처리 (저장/확인)

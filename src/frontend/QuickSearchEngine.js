@@ -179,7 +179,7 @@ class QuickSearchEngine {
     // 글로벌 약재 수정 모달 단축키 (Insert, E, 한글 ㄷ)
     // ----------------------------------------------------
     const isInsertKey = e.code === 'Insert' || key.toLowerCase() === 'insert';
-    const isEKey = e.code === 'KeyE';
+    const isEKey = e.code === 'KeyE' || key.toLowerCase() === 'e' || key === 'ㄷ' || key === 'ㄸ';
 
     if (isInsertKey || isEKey) {
       const isSearchTyping = this.state === 'search' && (document.activeElement === this.elements.searchInput);
@@ -196,6 +196,12 @@ class QuickSearchEngine {
           if (targetIndex >= 0 && targetIndex < items.length) {
             e.preventDefault();
             e.stopPropagation();
+            
+            // 검색 입력란 포커스를 강제 해제하여 IME 입력 및 input 이벤트가 추가 발생하여 검색 상태가 리셋되는 현상 방어
+            if (this.elements.searchInput && document.activeElement === this.elements.searchInput) {
+              this.elements.searchInput.blur();
+            }
+
             const selectedItem = items[targetIndex];
             const medicineId = parseInt(selectedItem.dataset.id);
             if (this.callbacks.onEditMed) {
