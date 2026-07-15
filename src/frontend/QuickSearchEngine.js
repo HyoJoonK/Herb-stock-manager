@@ -176,6 +176,38 @@ class QuickSearchEngine {
     }
 
     // ----------------------------------------------------
+    // 글로벌 약재 수정 모달 단축키 (Insert, E, 한글 ㄷ)
+    // ----------------------------------------------------
+    const isInsertKey = e.code === 'Insert' || key.toLowerCase() === 'insert';
+    const isEKey = e.code === 'KeyE';
+
+    if (isInsertKey || isEKey) {
+      const isSearchTyping = this.state === 'search' && (document.activeElement === this.elements.searchInput);
+      
+      // E 키는 검색창 타이핑 중이 아닐 때만 동작, Insert 키는 언제나 동작
+      if (isInsertKey || (isEKey && !isSearchTyping)) {
+        if (this.activeTab === 0 || this.activeTab === 3) {
+          const items = this.callbacks.getCurrentListItems();
+          let targetIndex = this.currentListIndex;
+          if (targetIndex === -1 && items.length > 0) {
+            targetIndex = 0; // 디폴트 첫 번째 아이템 선택
+          }
+          
+          if (targetIndex >= 0 && targetIndex < items.length) {
+            e.preventDefault();
+            e.stopPropagation();
+            const selectedItem = items[targetIndex];
+            const medicineId = parseInt(selectedItem.dataset.id);
+            if (this.callbacks.onEditMed) {
+              this.callbacks.onEditMed(medicineId);
+            }
+            return;
+          }
+        }
+      }
+    }
+
+    // ----------------------------------------------------
     // 글로벌 단축키 1: Alt + 1~4 (메인 탭 메뉴 강제 이동)
     // ----------------------------------------------------
     if (e.altKey && ['1', '2', '3', '4'].includes(key)) {
@@ -366,17 +398,6 @@ class QuickSearchEngine {
     } else if (e.key === 'Escape') {
       e.preventDefault();
       this.setFocusState('search');
-    } else if (e.key.toLowerCase() === 'insert' || e.key.toLowerCase() === 'e' || e.key === 'ㄷ') {
-      e.preventDefault();
-      if (this.activeTab === 0 || this.activeTab === 3) {
-        if (this.currentListIndex >= 0 && this.currentListIndex < items.length) {
-          const selectedItem = items[this.currentListIndex];
-          const medicineId = parseInt(selectedItem.dataset.id);
-          if (this.callbacks.onEditMed) {
-            this.callbacks.onEditMed(medicineId);
-          }
-        }
-      }
     } else if (e.key === 'Tab') {
       e.preventDefault();
       if (e.shiftKey) {
