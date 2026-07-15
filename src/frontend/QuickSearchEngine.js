@@ -182,34 +182,33 @@ class QuickSearchEngine {
     const isInsertKey = e.code === 'Insert' || key.toLowerCase() === 'insert';
     const isEKey = e.code === 'KeyE' || key.toLowerCase() === 'e' || key === 'ㄷ' || key === 'ㄸ';
 
-    if (isInsertKey || isEKey) {
-      const isSearchTyping = this.state === 'search' && (document.activeElement === this.elements.searchInput);
-      
-      // E 키는 검색창 타이핑 중이 아닐 때만 동작, Insert 키는 언제나 동작
-      if (isInsertKey || (isEKey && !isSearchTyping)) {
-        if (this.activeTab === 0 || this.activeTab === 3) {
-          const items = this.callbacks.getCurrentListItems();
-          let targetIndex = this.currentListIndex;
-          if (targetIndex === -1 && items.length > 0) {
-            targetIndex = 0; // 디폴트 첫 번째 아이템 선택
-          }
-          
-          if (targetIndex >= 0 && targetIndex < items.length) {
-            e.preventDefault();
-            e.stopPropagation();
-            
-            // 검색 입력란 포커스를 강제 해제하여 IME 입력 및 input 이벤트가 추가 발생하여 검색 상태가 리셋되는 현상 방어
-            if (this.elements.searchInput && document.activeElement === this.elements.searchInput) {
-              this.elements.searchInput.blur();
-            }
+    // E/ㄷ 키는 오직 약재 리스트 탐색 상태(this.state === 'list')일 때만 약재 정보 수정을 활성화하고,
+    // Insert 키는 검색란 입력 중이든 리스트 탐색 중이든 언제든 활성화시킵니다.
+    const canTriggerEdit = isInsertKey || (isEKey && this.state === 'list');
 
-            const selectedItem = items[targetIndex];
-            const medicineId = parseInt(selectedItem.dataset.id);
-            if (this.callbacks.onEditMed) {
-              this.callbacks.onEditMed(medicineId);
-            }
-            return;
+    if (canTriggerEdit) {
+      if (this.activeTab === 0 || this.activeTab === 3) {
+        const items = this.callbacks.getCurrentListItems();
+        let targetIndex = this.currentListIndex;
+        if (targetIndex === -1 && items.length > 0) {
+          targetIndex = 0; // 디폴트 첫 번째 아이템 선택
+        }
+        
+        if (targetIndex >= 0 && targetIndex < items.length) {
+          e.preventDefault();
+          e.stopPropagation();
+          
+          // 검색 입력란 포커스를 강제 해제하여 IME 입력 및 input 이벤트가 추가 발생하여 검색 상태가 리셋되는 현상 방어
+          if (this.elements.searchInput && document.activeElement === this.elements.searchInput) {
+            this.elements.searchInput.blur();
           }
+
+          const selectedItem = items[targetIndex];
+          const medicineId = parseInt(selectedItem.dataset.id);
+          if (this.callbacks.onEditMed) {
+            this.callbacks.onEditMed(medicineId);
+          }
+          return;
         }
       }
     }
@@ -504,6 +503,15 @@ class QuickSearchEngine {
       this.elements.searchInput.classList.add('keyboard-focused');
       this.elements.searchInput.focus();
       this.elements.searchInput.select();
+      
+      // 모달 닫힘 등으로 브라우저가 포커스를 바디로 강제 초기화하는 현상을 방어하기 위한 비동기 지연 포커스 안전장치
+      setTimeout(() => {
+        if (this.state === 'search' && document.activeElement !== this.elements.searchInput) {
+          this.elements.searchInput.focus();
+          this.elements.searchInput.select();
+        }
+      }, 50);
+
       this.currentListIndex = -1;
       this.clearActiveListItems();
     } else if (newState === 'category') {

@@ -533,7 +533,7 @@ function renderPrescription() {
       <td style="color:var(--color-text-muted);">${item.pack_size}g 기준</td>
       <td>
         <input type="text" value="${item.amount}" 
-               class="presc-item-amount-input numeric-input" inputmode="decimal"
+               class="presc-item-amount-input numeric-input" data-numeric-type="decimal"
                style="width: 70px; padding: 4px; border: 1px solid var(--color-border); border-radius: 4px; text-align: center;"> g
       </td>
       <td style="text-align: center;">
@@ -736,10 +736,10 @@ function renderBatchTable() {
           ${catOptions}
         </select>
       </td>
-      <td><input type="text" class="batch-pack numeric-input" inputmode="decimal" value="${item.pack_size}"></td>
-      <td><input type="text" class="batch-unopened numeric-input" inputmode="numeric" value="${item.unopened_packs}"></td>
-      <td><input type="text" class="batch-remain numeric-input" inputmode="decimal" value="${item.opened_pack_remain}"></td>
-      <td><input type="text" class="batch-safety numeric-input" inputmode="decimal" value="${item.safety_stock}"></td>
+      <td><input type="text" class="batch-pack numeric-input" data-numeric-type="decimal" value="${item.pack_size}"></td>
+      <td><input type="text" class="batch-unopened numeric-input" data-numeric-type="integer" value="${item.unopened_packs}"></td>
+      <td><input type="text" class="batch-remain numeric-input" data-numeric-type="decimal" value="${item.opened_pack_remain}"></td>
+      <td><input type="text" class="batch-safety numeric-input" data-numeric-type="decimal" value="${item.safety_stock}"></td>
       <td><input type="text" class="batch-unit" value="${item.unit}" style="width:40px;"></td>
       <td>
         <span class="batch-remove-btn" style="cursor:pointer;">❌</span>
@@ -933,7 +933,7 @@ function openEditMedicineModal(medId) {
   
   // 브라우저 렌더링 사이클 지연 포커싱으로 포커스 유실 방지
   setTimeout(() => {
-    document.getElementById('editMedPackSize').focus();
+    document.getElementById('editMedUnopened').focus();
   }, 50);
 }
 
@@ -1895,6 +1895,35 @@ document.addEventListener('DOMContentLoaded', () => {
         }
       }
     }
+
+    // 4. 모달 내 방향키 상하 이동 (포커스 이동)
+    if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+      const activeModal = Array.from(document.querySelectorAll('.modal-overlay.show, .popup-overlay.show'))[0];
+      if (activeModal) {
+        const activeEl = document.activeElement;
+        // SELECT와 TEXTAREA를 제외한 요소(INPUT, BUTTON 등)에서 방향키로 이동
+        if (activeEl && activeEl.tagName !== 'SELECT' && activeEl.tagName !== 'TEXTAREA') {
+          const focusableElements = Array.from(activeModal.querySelectorAll('input:not([type="hidden"]), select, textarea, button, [tabindex="0"]'));
+          if (focusableElements.length > 0) {
+            const idx = focusableElements.indexOf(activeEl);
+            if (idx !== -1) {
+              e.preventDefault();
+              let targetIdx;
+              if (e.key === 'ArrowDown') {
+                targetIdx = (idx + 1) % focusableElements.length;
+              } else {
+                targetIdx = (idx - 1 + focusableElements.length) % focusableElements.length;
+              }
+              const nextEl = focusableElements[targetIdx];
+              nextEl.focus();
+              if (nextEl.tagName === 'INPUT' && typeof nextEl.select === 'function') {
+                nextEl.select();
+              }
+            }
+          }
+        }
+      }
+    }
   });
 
   // 업데이트 기능 초기화
@@ -1996,8 +2025,8 @@ function initNumberInputZeroStripper() {
   function sanitizeValue(target, val) {
     if (target.type === 'number') return val;
     
-    const inputmode = target.getAttribute('inputmode');
-    if (inputmode === 'decimal') {
+    const numericType = target.getAttribute('data-numeric-type');
+    if (numericType === 'decimal') {
       // 숫자와 마침표(.)만 허용
       let cleaned = val.replace(/[^0-9.]/g, '');
       // 마침표가 여러 개 있으면 첫 번째 것만 유지
@@ -2006,7 +2035,7 @@ function initNumberInputZeroStripper() {
         cleaned = cleaned.slice(0, dotIndex + 1) + cleaned.slice(dotIndex + 1).replace(/\./g, '');
       }
       return cleaned;
-    } else if (inputmode === 'numeric') {
+    } else if (numericType === 'integer') {
       // 숫자만 허용
       return val.replace(/[^0-9]/g, '');
     }
@@ -2032,7 +2061,7 @@ function initNumberInputZeroStripper() {
       val = sanitizeValue(e.target, val);
       
       // 소수점 입력창인데 마침표로 끝나는 경우 정제
-      if (e.target.type !== 'number' && e.target.getAttribute('inputmode') === 'decimal') {
+      if (e.target.type !== 'number' && e.target.getAttribute('data-numeric-type') === 'decimal') {
         if (val === '.') val = '';
         else if (val.endsWith('.')) val = val.slice(0, -1);
       }
