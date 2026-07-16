@@ -34,6 +34,11 @@ let contextTargetPrescId = null; // 우클릭 대상 처방 ID
 let contextTargetCategoryId = null; // 우클릭 대상 카테고리 ID
 let isPrescriptionEditMode = false; // 처방 수정 모드 활성화 여부
 let currentEditingPrescId = null; // 현재 수정 중인 처방 ID
+let isPresetEditMode = false; // 프리셋 수정 모드 활성화 여부
+let currentEditingPresetId = null; // 현재 수정 중인 프리셋 ID
+let contextTargetPresetId = null; // 우클릭 대상 프리셋 ID
+let currentPrescMode = 'prescription'; // 'prescription' | 'preset'
+let currentHistoryTab = 'history'; // 'history' | 'presets'
 
 /**
  * UTC 기반의 시간 문자열(예: 'YYYY-MM-DD HH:mm:ss' 또는 ISO 8601 형식)을
@@ -547,7 +552,7 @@ function renderPrescription() {
                style="width: 70px; padding: 4px; border: 1px solid var(--color-border); border-radius: 4px; text-align: center;"> g
       </td>
       <td style="text-align: center;">
-        <span class="presc-remove-btn" style="cursor:pointer;">❌</span>
+        <span class="presc-remove-btn" style="cursor:pointer;"><span class="sf-icon sf-icon-xmark"></span></span>
       </td>
     `;
     tbody.appendChild(tr);
@@ -588,7 +593,7 @@ function renderPastPrescriptions() {
 
     tr.innerHTML = `
       <td style="font-weight:600; color:var(--color-text-muted);">#${p.id}</td>
-      <td style="font-weight:700; color:var(--color-primary);">${p.prescription_name}</td>
+      <td style="font-weight:700; color:var(--color-primary);">${p.prescription_name || '(이름 없음)'}</td>
       <td>${p.patient_name}</td>
       <td style="text-align:center;">${p.total_items}종</td>
       <td style="color:var(--color-text-muted); font-size:11px;">${formatUTCToKSTString(p.created_at)}</td>
@@ -629,7 +634,7 @@ function openPrescriptionDetailModal(prescId) {
   try {
     const detail = dbManager.getPrescriptionDetails(prescId);
     
-    document.getElementById('viewPrescName').textContent = detail.prescription_name;
+    document.getElementById('viewPrescName').textContent = detail.prescription_name || '(이름 없음)';
     document.getElementById('viewPrescPatient').textContent = detail.patient_name;
     document.getElementById('viewPrescDate').textContent = formatUTCToKSTString(detail.created_at);
     document.getElementById('viewPrescNote').textContent = detail.note || '메모 없음';
@@ -648,7 +653,8 @@ function openPrescriptionDetailModal(prescId) {
       deductBtn.style.display = 'inline-block';
       
       deductBtn.onclick = () => {
-        if (confirm(`"${detail.prescription_name}" 처방의 약재 재고 차감을 실행하시겠습니까?\n이 작업은 되돌릴 수 없으며 중복 실행할 수 없습니다.`)) {
+        const prescNameDisplay = detail.prescription_name || '(이름 없음)';
+        if (confirm(`"${prescNameDisplay}" 처방의 약재 재고 차감을 실행하시겠습니까?\n이 작업은 되돌릴 수 없으며 중복 실행할 수 없습니다.`)) {
           try {
             dbManager.deductPrescriptionStock(prescId);
             showToast('🎉 재고 차감이 성공적으로 완료되었습니다.');
@@ -717,7 +723,7 @@ function renderPredictView() {
       <td style="color:var(--color-accent); font-weight:700;">-${item.deficit}${item.unit}</td>
       <td>${item.nextMonthEstimate}${item.unit}</td>
       <td style="font-weight:700; color:var(--color-primary);">+${item.orderQuantityGrams}${item.unit}</td>
-      <td style="font-weight:700; background:#f5fdf7; color:var(--color-primary);">📦 ${item.orderPacks}봉지</td>
+      <td style="font-weight:700; background:#f5fdf7; color:var(--color-primary);"><span class="sf-icon sf-icon-box"></span> ${item.orderPacks}봉지</td>
     `;
     tbody.appendChild(tr);
   });
@@ -817,7 +823,7 @@ function renderBatchTable() {
       ${checkUI}
       <td><input type="text" class="batch-unit" value="${item.unit}" style="width:40px;" ${item.is_presence_only === 1 ? 'disabled style="background:var(--color-bg-secondary); color:var(--color-text-muted); text-align:center;"' : ''}></td>
       <td>
-        <span class="batch-remove-btn" style="cursor:pointer;">❌</span>
+        <span class="batch-remove-btn" style="cursor:pointer;"><span class="sf-icon sf-icon-xmark"></span></span>
       </td>
     `;
     tbody.appendChild(tr);
@@ -1005,7 +1011,7 @@ function openAddMedicineModal() {
 
 function openEditMedicineModal(medId) {
   const modal = document.getElementById('editMedicineModal');
-  document.getElementById('editModalHeader').textContent = '✏️ 약재 정보 수정';
+  document.getElementById('editModalHeader').innerHTML = '<span class="sf-icon sf-icon-pencil"></span> 약재 정보 수정';
   
   const med = dbManager.getAllMedicines().find(m => m.id === medId);
   if (!med) return;
@@ -1170,7 +1176,55 @@ function showContextMenu(menuElementId, x, y) {
 // ----------------------------------------------------
 function showToast(message, isError = false) {
   const toast = document.getElementById('toastMessage');
-  toast.textContent = message;
+  
+  // Map emojis to their SF Symbols class
+  const emojiToSfMap = {
+    '⚠️': 'warning',
+    '🟢': 'circle-green',
+    '🔴': 'circle',
+    '⚙️': 'gear',
+    '⚙': 'gear',
+    '📝': 'memo',
+    '✏️': 'pencil',
+    '✏': 'pencil',
+    '🗑️': 'trash',
+    '🗑': 'trash',
+    '💾': 'save',
+    '🔄': 'refresh',
+    '🎉': 'party',
+    '📥': 'import',
+    '📤': 'export',
+    '⚖️': 'scale',
+    '⚖': 'scale',
+    '✨': 'sparkles',
+    'ℹ️': 'info',
+    'ℹ': 'info',
+    '⚡': 'bolt',
+    '✅': 'checkmark'
+  };
+
+  let formattedMessage = message;
+  
+  // Find the leading emoji (if any) and replace it with a styled span
+  for (const [emoji, iconName] of Object.entries(emojiToSfMap)) {
+    if (message.startsWith(emoji)) {
+      let iconHtml = `<span class="sf-icon sf-icon-${iconName}"></span>`;
+      // Color customizations for specific statuses
+      if (iconName === 'circle') {
+        iconHtml = `<span class="sf-icon sf-icon-circle" style="color: var(--color-accent);"></span>`;
+      } else if (iconName === 'circle-green') {
+        iconHtml = `<span class="sf-icon sf-icon-circle-green" style="color: var(--color-primary);"></span>`;
+      } else if (iconName === 'warning') {
+        iconHtml = `<span class="sf-icon sf-icon-warning" style="color: #ffcc00;"></span>`;
+      }
+      
+      const restOfMessage = message.slice(emoji.length).trim();
+      formattedMessage = `${iconHtml} ${restOfMessage}`;
+      break;
+    }
+  }
+
+  toast.innerHTML = formattedMessage;
   if (isError) {
     toast.classList.add('toast-error');
   } else {
@@ -1181,6 +1235,7 @@ function showToast(message, isError = false) {
     toast.classList.remove('show');
   }, 2500);
 }
+
 
 // ----------------------------------------------------
 /**
@@ -1219,6 +1274,15 @@ function toggleMedTypeFields(isPresence) {
     if (safetyGroup) safetyGroup.style.display = 'flex';
     if (unitGroup) unitGroup.style.display = 'flex';
     
+    // 단순 유무 관리로 변경되면서 0으로 초기화되었던 안전 재고를 기본값 500으로 복원
+    if (safetyEl.value === '0' || !safetyEl.value) {
+      safetyEl.value = '500';
+    }
+    // 팩 규격도 비어 있거나 0이면 500으로 복원
+    if (packSizeEl.value === '0' || packSizeEl.value === '1' || !packSizeEl.value) {
+      packSizeEl.value = '500';
+    }
+
     if (unopenedLabel) {
       unopenedLabel.textContent = '미개봉 팩(봉지) 수';
     }
@@ -1282,8 +1346,9 @@ document.addEventListener('DOMContentLoaded', () => {
       }
     });
     prescTbody.addEventListener('click', (e) => {
-      if (e.target.classList.contains('presc-remove-btn')) {
-        const tr = e.target.closest('tr');
+      const removeBtn = e.target.closest('.presc-remove-btn');
+      if (removeBtn) {
+        const tr = removeBtn.closest('tr');
         const index = parseInt(tr.dataset.index);
         currentPrescriptionItems.splice(index, 1);
         renderPrescription();
@@ -1295,8 +1360,9 @@ document.addEventListener('DOMContentLoaded', () => {
   const batchTbody = document.getElementById('batchTableBody');
   if (batchTbody) {
     batchTbody.addEventListener('click', (e) => {
-      if (e.target.classList.contains('batch-remove-btn')) {
-        const tr = e.target.closest('tr');
+      const removeBtn = e.target.closest('.batch-remove-btn');
+      if (removeBtn) {
+        const tr = removeBtn.closest('tr');
         const id = parseInt(tr.dataset.id);
         batchEditItems.delete(id);
         renderBatchTable();
@@ -1374,11 +1440,15 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   });
 
-  // 과거 처방 완료 이력 실시간 검색 바인딩
+  // 과거 처방 완료 이력 및 프리셋 실시간 검색 바인딩
   const pastPrescSearch = document.getElementById('pastPrescriptionsSearch');
   if (pastPrescSearch) {
     pastPrescSearch.addEventListener('input', () => {
-      renderPastPrescriptions();
+      if (currentHistoryTab === 'history') {
+        renderPastPrescriptions();
+      } else {
+        renderPresetsHistoryList();
+      }
     });
   }
 
@@ -1528,7 +1598,58 @@ document.addEventListener('DOMContentLoaded', () => {
   // ----------------------------------------------------
   // 처방전 조제 수정 모드 제어 함수
   // ----------------------------------------------------
+  function setPrescMode(mode) {
+    currentPrescMode = mode;
+    
+    const btnPresc = document.getElementById('btnModePrescription');
+    const btnPreset = document.getElementById('btnModePreset');
+    const groupPatient = document.getElementById('groupPatientName');
+    const groupPresetLoad = document.getElementById('groupOpenPresetLoad');
+    const labelPrescName = document.getElementById('labelPrescriptionName');
+    const inputPrescName = document.getElementById('prescriptionName');
+    
+    const labelNote = document.getElementById('labelPrescriptionNote');
+    const noteInput = document.getElementById('prescriptionNote');
+    
+    const prescActions = document.getElementById('prescriptionActionRow');
+    const presetActions = document.getElementById('presetActionRow');
+    
+    if (mode === 'prescription') {
+      btnPresc.classList.add('active');
+      btnPreset.classList.remove('active');
+      groupPatient.style.display = 'flex';
+      groupPresetLoad.style.display = 'flex';
+      labelPrescName.textContent = '처방명';
+      inputPrescName.placeholder = '예: 감기약 (선택)';
+      labelNote.textContent = '처방 메모';
+      noteInput.placeholder = '예: 하루 3회 복용, 식후 30분 따뜻하게 복용';
+      prescActions.style.display = 'flex';
+      presetActions.style.display = 'none';
+    } else {
+      btnPresc.classList.remove('active');
+      btnPreset.classList.add('active');
+      groupPatient.style.display = 'none';
+      groupPresetLoad.style.display = 'none';
+      labelPrescName.textContent = '처방명 (프리셋 이름)';
+      inputPrescName.placeholder = '예: 감기약';
+      labelNote.textContent = '프리셋 메모';
+      noteInput.placeholder = '예: 감기 기본 처방, 식후 30분 복용';
+      prescActions.style.display = 'none';
+      presetActions.style.display = 'flex';
+    }
+    
+    // 모드 변경 시 깔끔한 시작을 위해 입력 필드 및 바구니 리셋
+    document.getElementById('prescriptionName').value = '';
+    document.getElementById('patientName').value = '';
+    document.getElementById('prescriptionNote').value = '';
+    currentPrescriptionItems = [];
+    renderPrescription();
+  }
+
   function enterPrescriptionEditMode(prescId) {
+    if (isPresetEditMode) {
+      exitPresetEditMode();
+    }
     try {
       const detail = dbManager.getPrescriptionDetails(prescId);
       isPrescriptionEditMode = true;
@@ -1537,9 +1658,23 @@ document.addEventListener('DOMContentLoaded', () => {
       // 1. UI 탭 전환
       switchTab('prescription');
 
-      // 2. 제목 변경 및 강조 스타일링 추가
-      document.getElementById('prescriptionCardTitle').textContent = `📝 조제 수정 (처방 #${prescId})`;
+      // 2. 제목 변경 및 강조 스타일링 추가 (모드 스위처 숨기고 편집 타이틀 표시)
+      document.querySelector('.presc-mode-switcher').style.display = 'none';
+      const titleEl = document.getElementById('prescriptionCardTitle');
+      titleEl.style.display = 'block';
+      titleEl.innerHTML = `<span class="sf-icon sf-icon-memo"></span> 조제 수정 (처방 #${prescId})`;
       document.getElementById('prescriptionCard').classList.add('edit-mode-highlight');
+
+      // 편집 시에는 항상 환자 처방 모드 필드로 강제 표시 (불러오기 버튼은 감춤)
+      document.getElementById('groupPatientName').style.display = 'flex';
+      document.getElementById('groupPrescriptionName').style.display = 'flex';
+      document.getElementById('groupOpenPresetLoad').style.display = 'none';
+      document.getElementById('labelPrescriptionName').textContent = '처방명';
+      document.getElementById('prescriptionName').placeholder = '예: 감기약 (선택)';
+      document.getElementById('labelPrescriptionNote').textContent = '처방 메모';
+      document.getElementById('prescriptionNote').placeholder = '예: 하루 3회 복용, 식후 30분 따뜻하게 복용';
+      document.getElementById('prescriptionActionRow').style.display = 'flex';
+      document.getElementById('presetActionRow').style.display = 'none';
 
       // 3. 수정 취소 버튼 표시 및 버튼 텍스트/스타일 변경
       document.getElementById('btnCancelEditPrescription').style.display = 'flex';
@@ -1547,17 +1682,17 @@ document.addEventListener('DOMContentLoaded', () => {
       const saveBtn = document.getElementById('btnSaveOnlyPrescription');
       saveBtn.className = 'btn btn-secondary';
       saveBtn.style.flex = '1';
-      saveBtn.innerHTML = '💾 수정 저장';
+      saveBtn.innerHTML = '<span class="sf-icon sf-icon-save"></span> 수정 저장';
       
       const isAlreadyDeducted = detail.is_deducted === 1;
       const deductBtn = document.getElementById('btnDeductStock');
       deductBtn.className = 'btn btn-primary';
       deductBtn.style.flex = '2';
       deductBtn.style.display = 'flex';
-      deductBtn.innerHTML = isAlreadyDeducted ? '📦 재고 갱신' : '📦 재고 차감';
+      deductBtn.innerHTML = isAlreadyDeducted ? '<span class="sf-icon sf-icon-box"></span> 재고 갱신' : '<span class="sf-icon sf-icon-box"></span> 재고 차감';
 
       // 4. 입력 필드 값 적재
-      document.getElementById('prescriptionName').value = detail.prescription_name;
+      document.getElementById('prescriptionName').value = detail.prescription_name || '';
       document.getElementById('patientName').value = detail.patient_name;
       document.getElementById('prescriptionNote').value = detail.note || '';
 
@@ -1582,8 +1717,9 @@ document.addEventListener('DOMContentLoaded', () => {
     isPrescriptionEditMode = false;
     currentEditingPrescId = null;
 
-    // 1. 제목 및 스타일링 원복
-    document.getElementById('prescriptionCardTitle').textContent = '📝 처방전 조제 작성';
+    // 1. 제목 및 스타일링 원복 (모드 스위처 보이고 타이틀 숨김)
+    document.querySelector('.presc-mode-switcher').style.display = 'flex';
+    document.getElementById('prescriptionCardTitle').style.display = 'none';
     document.getElementById('prescriptionCard').classList.remove('edit-mode-highlight');
 
     // 2. 취소 버튼 숨기기 및 완료 버튼 텍스트/스타일 원복
@@ -1592,22 +1728,86 @@ document.addEventListener('DOMContentLoaded', () => {
     const saveBtn = document.getElementById('btnSaveOnlyPrescription');
     saveBtn.className = 'btn btn-primary';
     saveBtn.style.flex = '2';
-    saveBtn.innerHTML = '💾 처방 저장';
+    saveBtn.innerHTML = '<span class="sf-icon sf-icon-save"></span> 처방 저장';
     
     const deductBtn = document.getElementById('btnDeductStock');
     deductBtn.className = 'btn btn-secondary';
     deductBtn.style.flex = '1';
     deductBtn.style.display = 'none';
-    deductBtn.innerHTML = '📦 재고 차감';
+    deductBtn.innerHTML = '<span class="sf-icon sf-icon-box"></span> 재고 차감';
 
-    // 3. 입력 필드 초기화
-    document.getElementById('prescriptionName').value = '';
-    document.getElementById('patientName').value = '';
-    document.getElementById('prescriptionNote').value = '';
+    // 스위처 상태 리셋 (처방 모드로 전환 및 필드 리셋)
+    setPrescMode('prescription');
+  }
 
-    // 4. 바구니 초기화 및 렌더링
-    currentPrescriptionItems = [];
-    renderPrescription();
+  function enterPresetEditMode(presetId) {
+    if (isPrescriptionEditMode) {
+      exitPrescriptionEditMode();
+    }
+    try {
+      const detail = dbManager.getPresetDetails(presetId);
+      isPresetEditMode = true;
+      currentEditingPresetId = presetId;
+
+      // 1. UI 탭 전환
+      switchTab('prescription');
+
+      // 2. 프리셋 모드로 설정
+      setPrescMode('preset');
+
+      // 3. 제목 변경 및 강조 스타일링 추가 (모드 스위처 숨기고 편집 타이틀 표시)
+      document.querySelector('.presc-mode-switcher').style.display = 'none';
+      const titleEl = document.getElementById('prescriptionCardTitle');
+      titleEl.style.display = 'block';
+      titleEl.innerHTML = `<span class="sf-icon sf-icon-pencil"></span> 프리셋 수정 (프리셋 #${presetId})`;
+      document.getElementById('prescriptionCard').classList.add('edit-mode-highlight');
+
+      // 4. 취소 버튼 노출 및 저장 버튼 스타일 조정
+      document.getElementById('btnCancelEditPreset').style.display = 'flex';
+      const saveBtn = document.getElementById('btnSavePreset');
+      saveBtn.style.width = 'auto';
+      saveBtn.style.flex = '2';
+      saveBtn.innerHTML = '<span class="sf-icon sf-icon-save"></span> 수정 저장';
+
+      // 5. 프리셋 데이터 채워넣기
+      document.getElementById('prescriptionName').value = detail.preset_name;
+      document.getElementById('prescriptionNote').value = detail.note || '';
+
+      currentPrescriptionItems = detail.items.map(item => {
+        const med = dbManager.getAllMedicines().find(m => m.id === item.medicine_id);
+        return {
+          id: item.medicine_id,
+          name: item.medicine_name,
+          pack_size: med ? med.pack_size : 500,
+          amount: item.amount
+        };
+      });
+
+      renderPrescription();
+    } catch (err) {
+      alert(`프리셋 데이터를 불러오지 못했습니다: ${err.message}`);
+    }
+  }
+
+  function exitPresetEditMode() {
+    isPresetEditMode = false;
+    currentEditingPresetId = null;
+
+    // 1. 제목 및 스타일링 원복 (모드 스위처 보이고 타이틀 숨김)
+    document.querySelector('.presc-mode-switcher').style.display = 'flex';
+    document.getElementById('prescriptionCardTitle').style.display = 'none';
+    document.getElementById('prescriptionCard').classList.remove('edit-mode-highlight');
+
+    // 2. 취소 버튼 숨기기 및 완료 버튼 텍스트/스타일 원복
+    document.getElementById('btnCancelEditPreset').style.display = 'none';
+    
+    const saveBtn = document.getElementById('btnSavePreset');
+    saveBtn.style.width = '100%';
+    saveBtn.style.flex = 'none';
+    saveBtn.innerHTML = '<span class="sf-icon sf-icon-star"></span> 처방 프리셋 저장';
+
+    // 스위처 상태 리셋 (처방 모드로 전환 및 필드 리셋)
+    setPrescMode('prescription');
   }
 
   // 마우스 클릭 탭 스위칭 바인딩
@@ -1661,8 +1861,18 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     btnSettingsSave.addEventListener('click', () => {
-      const url = settingsSupabaseUrl.value.trim();
+      let url = settingsSupabaseUrl.value.trim();
       const key = settingsSupabaseKey.value.trim();
+
+      if (url) {
+        if (!/^https?:\/\//i.test(url)) {
+          if (!url.includes('.')) {
+            url = `https://${url}.supabase.co`;
+          } else {
+            url = `https://${url}`;
+          }
+        }
+      }
 
       localStorage.setItem('supabase_url', url);
       localStorage.setItem('supabase_key', key);
@@ -1891,6 +2101,45 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   });
 
+  // ----------------------------------------------------
+  // 프리셋 우클릭 컨텍스트 메뉴 액션 연동
+  // ----------------------------------------------------
+  document.getElementById('ctxPresetEdit').addEventListener('click', () => {
+    if (contextTargetPresetId !== null) {
+      enterPresetEditMode(contextTargetPresetId);
+      contextTargetPresetId = null;
+    }
+  });
+
+  document.getElementById('ctxPresetDelete').addEventListener('click', () => {
+    if (contextTargetPresetId !== null) {
+      const id = contextTargetPresetId;
+      const preset = dbManager.getAllPresets().find(pr => pr.id === Number(id));
+      if (confirm(`⚠️ 정말로 "${preset.preset_name}" 프리셋을 삭제하시겠습니까?`)) {
+        try {
+          dbManager.deletePreset(id);
+          showToast('🗑️ 프리셋이 삭제되었습니다.', true);
+          
+          if (isPresetEditMode && id === currentEditingPresetId) {
+            exitPresetEditMode();
+          }
+
+          renderPresetsHistoryList();
+          if (document.getElementById('presetLoadModal').classList.contains('show')) {
+            renderPresetListModal();
+          }
+        } catch (err) {
+          alert(`프리셋 삭제 실패: ${err.message}`);
+        }
+      }
+      contextTargetPresetId = null;
+    }
+  });
+
+  document.getElementById('btnCancelEditPreset').addEventListener('click', () => {
+    exitPresetEditMode();
+  });
+
   // 카테고리 탭 우클릭 감지 (이벤트 위임)
   document.addEventListener('contextmenu', (e) => {
     if (e.target.classList.contains('category-tab')) {
@@ -1919,12 +2168,12 @@ document.addEventListener('DOMContentLoaded', () => {
   // [처방] 조제 제출 및 수정 완료 처리
   // ----------------------------------------------------
   function processPrescriptionSubmit(isDeduct) {
-    const prescName = document.getElementById('prescriptionName').value.trim();
+    const prescName = document.getElementById('prescriptionName').value.trim() || null;
     const patName = document.getElementById('patientName').value.trim();
     const prescNote = document.getElementById('prescriptionNote').value.trim();
 
-    if (!prescName || !patName) {
-      alert('처방명과 환자명을 입력해 주세요.');
+    if (!patName) {
+      alert('환자명을 입력해 주세요.');
       return;
     }
     if (currentPrescriptionItems.length === 0) {
@@ -1948,10 +2197,11 @@ document.addEventListener('DOMContentLoaded', () => {
         exitPrescriptionEditMode();
       } else {
         dbManager.addPrescription(prescName, patName, items, prescNote, isDeduct);
+        const nameDisplay = prescName ? `"${prescName}" ` : '';
         if (isDeduct) {
-          showToast(`🎉 "${prescName}" 조제 완료 및 실시간 재고 차감 처리되었습니다.`);
+          showToast(`🎉 ${nameDisplay}조제 완료 및 실시간 재고 차감 처리되었습니다.`);
         } else {
-          showToast(`🎉 "${prescName}" 처방이 저장되었습니다. (재고 미차감)`);
+          showToast(`🎉 ${nameDisplay}처방이 저장되었습니다. (재고 미차감)`);
         }
       }
 
@@ -1976,6 +2226,338 @@ document.addEventListener('DOMContentLoaded', () => {
 
   document.getElementById('btnDeductStock').addEventListener('click', () => {
     processPrescriptionSubmit(true);
+  });
+
+  // ----------------------------------------------------
+  // [처방 프리셋] 이벤트 바인딩 및 함수
+  // ----------------------------------------------------
+  document.getElementById('btnModePrescription').addEventListener('click', () => {
+    setPrescMode('prescription');
+  });
+
+  document.getElementById('btnModePreset').addEventListener('click', () => {
+    setPrescMode('preset');
+  });
+
+  document.getElementById('btnSavePreset').addEventListener('click', () => {
+    const presetName = document.getElementById('prescriptionName').value.trim();
+    const note = document.getElementById('prescriptionNote').value.trim();
+
+    if (!presetName) {
+      alert('프리셋 처방명을 입력해 주세요.');
+      return;
+    }
+    if (currentPrescriptionItems.length === 0) {
+      alert('프리셋에 추가할 약재가 없습니다.');
+      return;
+    }
+
+    try {
+      const items = currentPrescriptionItems.map(item => ({
+        medicineId: item.id,
+        amount: item.amount
+      }));
+
+      if (isPresetEditMode && currentEditingPresetId !== null) {
+        dbManager.updatePreset(currentEditingPresetId, presetName, note, items);
+        showToast(`⭐ 프리셋 "${presetName}"이 수정되었습니다.`);
+        exitPresetEditMode();
+      } else {
+        dbManager.addPreset(presetName, note, items);
+        showToast(`⭐ 프리셋 "${presetName}"이 저장되었습니다.`);
+        setPrescMode('prescription');
+      }
+
+      if (currentHistoryTab === 'presets') {
+        renderPresetsHistoryList();
+      }
+    } catch (err) {
+      alert(`프리셋 저장 실패: ${err.message}`);
+    }
+  });
+
+  document.getElementById('btnOpenPresetLoad').addEventListener('click', () => {
+    document.getElementById('presetLoadModal').classList.add('show');
+    document.getElementById('presetSearchInput').value = '';
+    renderPresetListModal();
+  });
+
+  document.getElementById('btnPresetLoadClose').addEventListener('click', () => {
+    document.getElementById('presetLoadModal').classList.remove('show');
+  });
+
+  document.getElementById('presetSearchInput').addEventListener('input', () => {
+    renderPresetListModal();
+  });
+
+  function renderPresetListModal() {
+    const tbody = document.getElementById('presetListBody');
+    const empty = document.getElementById('presetListEmpty');
+    const searchQuery = document.getElementById('presetSearchInput').value.trim().toLowerCase();
+    
+    tbody.innerHTML = '';
+    
+    let presets = dbManager.getAllPresets();
+    if (searchQuery) {
+      presets = presets.filter(p => 
+        p.preset_name.toLowerCase().includes(searchQuery) || 
+        (p.note && p.note.toLowerCase().includes(searchQuery))
+      );
+    }
+    
+    if (presets.length === 0) {
+      empty.style.display = 'block';
+      return;
+    }
+    
+    empty.style.display = 'none';
+    presets.forEach(p => {
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td style="font-weight: 700; color: var(--color-primary);">${p.preset_name}</td>
+        <td style="font-style: italic; color: var(--color-text-muted); font-size: 11px;">${p.note || '-'}</td>
+        <td style="text-align: center;">
+          <button class="btn-load-preset" data-id="${p.id}">적용</button>
+        </td>
+        <td style="text-align: center;">
+          <button class="btn-delete-preset" data-id="${p.id}"><span class="sf-icon sf-icon-trash"></span></button>
+        </td>
+      `;
+      tbody.appendChild(tr);
+    });
+    
+    // 불러오기 이벤트 연결
+    tbody.querySelectorAll('.btn-load-preset').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const id = btn.getAttribute('data-id');
+        loadPresetToBasket(id);
+      });
+    });
+    
+    // 삭제 이벤트 연결
+    tbody.querySelectorAll('.btn-delete-preset').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const id = btn.getAttribute('data-id');
+        const preset = presets.find(p => p.id === Number(id));
+        if (confirm(`"${preset.preset_name}" 프리셋을 삭제하시겠습니까?`)) {
+          try {
+            dbManager.deletePreset(id);
+            showToast('프리셋이 삭제되었습니다.');
+            renderPresetListModal();
+            if (currentHistoryTab === 'presets') {
+              renderPresetsHistoryList();
+            }
+          } catch (err) {
+            alert(`프리셋 삭제 실패: ${err.message}`);
+          }
+        }
+      });
+    });
+  }
+
+  function loadPresetToBasket(presetId) {
+    if (currentPrescriptionItems.length > 0) {
+      if (!confirm('현재 작성 중인 처방전 약재 목록을 지우고 프리셋을 불러오시겠습니까?')) {
+        return;
+      }
+    }
+
+    try {
+      const detail = dbManager.getPresetDetails(presetId);
+      
+      currentPrescriptionItems = detail.items.map(item => {
+        const med = dbManager.getAllMedicines().find(m => m.id === item.medicine_id);
+        return {
+          id: item.medicine_id,
+          name: item.medicine_name,
+          pack_size: med ? med.pack_size : 500,
+          amount: item.amount
+        };
+      });
+
+      if (detail.note) {
+        document.getElementById('prescriptionNote').value = detail.note;
+      }
+      
+      renderPrescription();
+      document.getElementById('presetLoadModal').classList.remove('show');
+      showToast(`⭐ "${detail.preset_name}" 프리셋을 적용했습니다.`);
+    } catch (err) {
+      alert(`프리셋 로드 실패: ${err.message}`);
+    }
+  }
+
+  // ----------------------------------------------------
+  // [처방 완료 이력 & 프리셋 목록 탭 전환] 이벤트 바인딩 및 함수
+  // ----------------------------------------------------
+  document.getElementById('btnTabHistory').addEventListener('click', () => {
+    setHistoryTab('history');
+  });
+
+  document.getElementById('btnTabPresets').addEventListener('click', () => {
+    setHistoryTab('presets');
+  });
+
+  function setHistoryTab(tab) {
+    currentHistoryTab = tab;
+    
+    const btnHistory = document.getElementById('btnTabHistory');
+    const btnPresets = document.getElementById('btnTabPresets');
+    
+    const wrapperHistory = document.getElementById('pastPrescriptionsWrapper');
+    const emptyHistory = document.getElementById('pastPrescriptionsEmpty');
+    const wrapperPresets = document.getElementById('presetsHistoryWrapper');
+    const emptyPresets = document.getElementById('presetsHistoryEmpty');
+    
+    const searchInput = document.getElementById('pastPrescriptionsSearch');
+    
+    if (tab === 'history') {
+      btnHistory.classList.add('active');
+      btnPresets.classList.remove('active');
+      
+      wrapperHistory.style.display = 'block';
+      emptyHistory.style.display = 'none'; // renderPastPrescriptions will toggle this properly
+      wrapperPresets.style.display = 'none';
+      emptyPresets.style.display = 'none';
+      
+      searchInput.placeholder = '처방명, 환자명, 약재명 검색...';
+      renderPastPrescriptions();
+    } else {
+      btnHistory.classList.remove('active');
+      btnPresets.classList.add('active');
+      
+      wrapperHistory.style.display = 'none';
+      emptyHistory.style.display = 'none';
+      wrapperPresets.style.display = 'block';
+      emptyPresets.style.display = 'none'; // renderPresetsHistoryList will toggle this properly
+      
+      searchInput.placeholder = '프리셋명, 메모 검색...';
+      renderPresetsHistoryList();
+    }
+  }
+
+  function renderPresetsHistoryList() {
+    const tbody = document.getElementById('presetsHistoryBody');
+    const empty = document.getElementById('presetsHistoryEmpty');
+    const wrapper = document.getElementById('presetsHistoryWrapper');
+    const searchQuery = document.getElementById('pastPrescriptionsSearch').value.trim().toLowerCase();
+    
+    tbody.innerHTML = '';
+    
+    let presets = dbManager.getAllPresets();
+    if (searchQuery) {
+      presets = presets.filter(p => 
+        p.preset_name.toLowerCase().includes(searchQuery) || 
+        (p.note && p.note.toLowerCase().includes(searchQuery))
+      );
+    }
+    
+    if (presets.length === 0) {
+      wrapper.style.display = 'none';
+      empty.style.display = 'block';
+      return;
+    }
+    
+    empty.style.display = 'none';
+    wrapper.style.display = 'block';
+    
+    presets.forEach(p => {
+      const tr = document.createElement('tr');
+      tr.style.cursor = 'pointer';
+      tr.innerHTML = `
+        <td style="font-weight:600; color:var(--color-text-muted);">#${p.id}</td>
+        <td style="font-weight:700; color:var(--color-primary);">${p.preset_name}</td>
+        <td style="font-style: italic; color:var(--color-text-muted); font-size:11px;">${p.note || '-'}</td>
+        <td style="text-align:center;">${p.total_items}종</td>
+        <td style="color:var(--color-text-muted); font-size:11px;">${formatUTCToKSTString(p.created_at)}</td>
+        <td style="text-align:center; display: flex; gap: 6px; justify-content: center; align-items: center; height: 100%;">
+          <button class="btn btn-secondary btn-apply-preset-hist" data-id="${p.id}" style="padding: 2px 8px; font-size: 11px;">적용</button>
+          <button class="btn btn-primary btn-delete-preset-hist" data-id="${p.id}" style="padding: 2px 8px; font-size: 11px; background: #e74c3c; border-color: #e74c3c;">삭제</button>
+        </td>
+      `;
+      
+      // 행 클릭 시 프리셋 상세 정보 모달 오픈
+      tr.addEventListener('click', (e) => {
+        if (e.target.closest('button')) return;
+        openPresetDetailModal(p.id);
+      });
+
+      // 마우스 우클릭 (Context Menu) 프리셋 편집/삭제 트리거
+      tr.addEventListener('contextmenu', (e) => {
+        e.preventDefault();
+        contextTargetPresetId = p.id;
+        showContextMenu('presetContextMenu', e.pageX, e.pageY);
+      });
+      
+      tbody.appendChild(tr);
+    });
+    
+    // 적용 버튼 바인딩
+    tbody.querySelectorAll('.btn-apply-preset-hist').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const id = btn.getAttribute('data-id');
+        loadPresetToBasket(id);
+      });
+    });
+    
+    // 삭제 버튼 바인딩
+    tbody.querySelectorAll('.btn-delete-preset-hist').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const id = btn.getAttribute('data-id');
+        const preset = presets.find(pr => pr.id === Number(id));
+        if (confirm(`"${preset.preset_name}" 프리셋을 삭제하시겠습니까?`)) {
+          try {
+            dbManager.deletePreset(id);
+            showToast('프리셋이 삭제되었습니다.');
+            renderPresetsHistoryList();
+            // 불러오기 모달도 열려있으면 리스트 리프레시
+            if (document.getElementById('presetLoadModal').classList.contains('show')) {
+              renderPresetListModal();
+            }
+          } catch (err) {
+            alert(`프리셋 삭제 실패: ${err.message}`);
+          }
+        }
+      });
+    });
+  }
+
+  function openPresetDetailModal(presetId) {
+    try {
+      const detail = dbManager.getPresetDetails(presetId);
+      
+      document.getElementById('viewPresetDetailName').textContent = detail.preset_name;
+      document.getElementById('viewPresetDetailDate').textContent = formatUTCToKSTString(detail.created_at);
+      document.getElementById('viewPresetDetailNote').textContent = detail.note || '메모 없음';
+      
+      const tbody = document.getElementById('viewPresetDetailItemsBody');
+      tbody.innerHTML = '';
+      
+      detail.items.forEach(item => {
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+          <td>${item.medicine_name}</td>
+          <td style="text-align: right; font-weight: bold;">${item.amount}${item.unit}</td>
+        `;
+        tbody.appendChild(tr);
+      });
+      
+      const applyBtn = document.getElementById('btnPresetDetailApply');
+      applyBtn.onclick = () => {
+        loadPresetToBasket(presetId);
+        document.getElementById('presetDetailModal').classList.remove('show');
+      };
+      
+      document.getElementById('presetDetailModal').classList.add('show');
+    } catch (err) {
+      alert(`프리셋 데이터를 불러오지 못했습니다: ${err.message}`);
+    }
+  }
+
+  document.getElementById('btnPresetDetailClose').addEventListener('click', () => {
+    document.getElementById('presetDetailModal').classList.remove('show');
   });
 
   // ----------------------------------------------------
@@ -2089,7 +2671,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // 1. Esc 키로 모든 모달 닫기
     if (e.key === 'Escape') {
       let closedMedModal = false;
-      const modals = ['editMedicineModal', 'addCategoryModal', 'editCategoryModal', 'prescriptionDetailModal', 'quantityPopup', 'settingsModal'];
+      const modals = ['editMedicineModal', 'addCategoryModal', 'editCategoryModal', 'prescriptionDetailModal', 'quantityPopup', 'settingsModal', 'presetLoadModal', 'presetDetailModal'];
       modals.forEach(id => {
         const el = document.getElementById(id);
         if (el && el.classList.contains('show')) {
@@ -2102,8 +2684,10 @@ document.addEventListener('DOMContentLoaded', () => {
       });
       const medCtx = document.getElementById('medContextMenu');
       const prescCtx = document.getElementById('prescContextMenu');
+      const presetCtx = document.getElementById('presetContextMenu');
       if (medCtx) medCtx.style.display = 'none';
       if (prescCtx) prescCtx.style.display = 'none';
+      if (presetCtx) presetCtx.style.display = 'none';
 
       if (closedMedModal && searchEngine) {
         searchEngine.setFocusState('search');
@@ -2212,7 +2796,7 @@ function initUpdateFeatures() {
   // 업데이트 확인 버튼 클릭 이벤트
   btnCheckUpdate.addEventListener('click', () => {
     btnCheckUpdate.disabled = true;
-    btnCheckUpdate.textContent = '⏳ 확인 중...';
+    btnCheckUpdate.innerHTML = '<span class="sf-icon sf-icon-hourglass"></span> 확인 중...';
     updateStatusText.textContent = '최신 업데이트 정보를 조회하는 중입니다...';
     updateStatusText.style.color = 'var(--color-text-main)';
     
@@ -2234,7 +2818,7 @@ function initUpdateFeatures() {
         updateStatusText.textContent = data.message || '현재 최신 버전을 사용하고 있습니다.';
         updateStatusText.style.color = 'var(--color-text-main)';
         btnCheckUpdate.disabled = false;
-        btnCheckUpdate.textContent = '🔄 업데이트 확인';
+        btnCheckUpdate.innerHTML = '<span class="sf-icon sf-icon-refresh"></span> 업데이트 확인';
         break;
       case 'downloading':
         updateStatusText.textContent = data.message || '업데이트 다운로드 진행 중...';
@@ -2244,13 +2828,13 @@ function initUpdateFeatures() {
         updateStatusText.textContent = data.message || '다운로드 완료. 즉시 설치할 수 있습니다.';
         updateStatusText.style.color = 'var(--color-primary)';
         btnCheckUpdate.disabled = false;
-        btnCheckUpdate.textContent = '🔄 업데이트 확인';
+        btnCheckUpdate.innerHTML = '<span class="sf-icon sf-icon-refresh"></span> 업데이트 확인';
         break;
       case 'error':
         updateStatusText.textContent = (data.message || '업데이트 확인 실패.') + (data.error ? ` (${data.error})` : '');
         updateStatusText.style.color = 'var(--color-accent)';
         btnCheckUpdate.disabled = false;
-        btnCheckUpdate.textContent = '🔄 업데이트 확인';
+        btnCheckUpdate.innerHTML = '<span class="sf-icon sf-icon-refresh"></span> 업데이트 확인';
         break;
       default:
         break;
@@ -2403,7 +2987,7 @@ function renderNotifications() {
     // 버튼 구성 (크기 키움)
     let actionButtons = '';
     if (n.is_read === 0) {
-      actionButtons += `<button class="btn btn-primary" onclick="openNotificationAdjustModal(event, ${n.id}, ${n.medicine_id}, '${n.medicine_name.replace(/'/g, "\\'")}')" style="font-size: 11px; padding: 4px 10px; height: 26px; display: inline-flex; align-items: center; justify-content: center;">⚖️ 잔량 보정</button>`;
+      actionButtons += `<button class="btn btn-primary" onclick="openNotificationAdjustModal(event, ${n.id}, ${n.medicine_id}, '${n.medicine_name.replace(/'/g, "\\'")}')" style="font-size: 11px; padding: 4px 10px; height: 26px; display: inline-flex; align-items: center; justify-content: center;"><span class="sf-icon sf-icon-scale"></span> 잔량 보정</button>`;
       actionButtons += `<button class="btn" onclick="readNotification(event, ${n.id})" style="font-size: 11px; padding: 4px 10px; height: 26px; border: 1px solid var(--color-border); background: var(--bg-card); display: inline-flex; align-items: center; justify-content: center;">읽음</button>`;
     }
     actionButtons += `<button class="btn" onclick="deleteNotification(event, ${n.id})" style="font-size: 11px; padding: 4px 10px; height: 26px; color: var(--color-accent); border: 1px solid var(--color-border); background: var(--bg-card); display: inline-flex; align-items: center; justify-content: center;">삭제</button>`;

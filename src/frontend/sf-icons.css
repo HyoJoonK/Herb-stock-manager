@@ -1,0 +1,170 @@
+/**
+ * @file sf-icons.css
+ * @description macOS SF Symbols (SVG) CSS Mask-based Icon System.
+ * Automatically aligns with currentColor and text size.
+ */
+
+.sf-icon {
+  display: inline-block;
+  width: 1.1em;
+  height: 1.1em;
+  background-color: currentColor;
+  vertical-align: -0.15em;
+  mask-repeat: no-repeat;
+  mask-position: center;
+  mask-size: contain;
+  -webkit-mask-repeat: no-repeat;
+  -webkit-mask-position: center;
+  -webkit-mask-size: contain;
+}
+
+/* Icon classes mapped to SVG files */
+.sf-icon-leaf {
+  mask-image: url('svg/leaf.fill.svg');
+  -webkit-mask-image: url('svg/leaf.fill.svg');
+}
+
+.sf-icon-search {
+  mask-image: url('svg/magnifyingglass.svg');
+  -webkit-mask-image: url('svg/magnifyingglass.svg');
+}
+
+.sf-icon-clipboard {
+  mask-image: url('svg/list.bullet.clipboard.svg');
+  -webkit-mask-image: url('svg/list.bullet.clipboard.svg');
+}
+
+.sf-icon-lightbulb {
+  mask-image: url('svg/lightbulb.svg');
+  -webkit-mask-image: url('svg/lightbulb.svg');
+}
+
+.sf-icon-box {
+  mask-image: url('svg/shippingbox.svg');
+  -webkit-mask-image: url('svg/shippingbox.svg');
+}
+
+.sf-icon-star {
+  mask-image: url('svg/star.fill.svg');
+  -webkit-mask-image: url('svg/star.fill.svg');
+}
+
+.sf-icon-hourglass {
+  mask-image: url('svg/hourglass.svg');
+  -webkit-mask-image: url('svg/hourglass.svg');
+}
+
+.sf-icon-gear {
+  mask-image: url('svg/gearshape.svg');
+  -webkit-mask-image: url('svg/gearshape.svg');
+}
+
+.sf-icon-memo {
+  mask-image: url('svg/square.and.pencil.svg');
+  -webkit-mask-image: url('svg/square.and.pencil.svg');
+}
+
+.sf-icon-pencil {
+  mask-image: url('svg/pencil.svg');
+  -webkit-mask-image: url('svg/pencil.svg');
+}
+
+.sf-icon-trash {
+  mask-image: url('svg/trash.svg');
+  -webkit-mask-image: url('svg/trash.svg');
+}
+
+.sf-icon-save {
+  mask-image: url('svg/square.and.arrow.down.svg');
+  -webkit-mask-image: url('svg/square.and.arrow.down.svg');
+}
+
+.sf-icon-xmark {
+  mask-image: url('svg/xmark.svg');
+  -webkit-mask-image: url('svg/xmark.svg');
+}
+
+.sf-icon-plus {
+  mask-image: url('svg/plus.svg');
+  -webkit-mask-image: url('svg/plus.svg');
+}
+
+.sf-icon-refresh {
+  mask-image: url('svg/arrow.trianglehead.2.clockwise.rotate.90.svg');
+  -webkit-mask-image: url('svg/arrow.trianglehead.2.clockwise.rotate.90.svg');
+}
+
+.sf-icon-scroll {
+  mask-image: url('svg/scroll.svg');
+  -webkit-mask-image: url('svg/scroll.svg');
+}
+
+.sf-icon-warning {
+  mask-image: url('svg/exclamationmark.triangle.fill.svg');
+  -webkit-mask-image: url('svg/exclamationmark.triangle.fill.svg');
+}
+
+.sf-icon-party {
+  mask-image: url('svg/party.popper.svg');
+  -webkit-mask-image: url('svg/party.popper.svg');
+}
+
+.sf-icon-bell {
+  mask-image: url('svg/bell.svg');
+  -webkit-mask-image: url('svg/bell.svg');
+}
+
+.sf-icon-import {
+  mask-image: url('svg/arrow.down.document.svg');
+  -webkit-mask-image: url('svg/arrow.down.document.svg');
+}
+
+.sf-icon-export {
+  mask-image: url('svg/arrow.up.document.svg');
+  -webkit-mask-image: url('svg/arrow.up.document.svg');
+}
+
+.sf-icon-scale {
+  mask-image: url('svg/scale.3d.svg');
+  -webkit-mask-image: url('svg/scale.3d.svg');
+}
+
+.sf-icon-sparkles {
+  mask-image: url('svg/sparkles.svg');
+  -webkit-mask-image: url('svg/sparkles.svg');
+}
+
+.sf-icon-clock {
+  mask-image: url('svg/clock.svg');
+  -webkit-mask-image: url('svg/clock.svg');
+}
+
+.sf-icon-circle {
+  mask-image: url('svg/circle.fill.svg');
+  -webkit-mask-image: url('svg/circle.fill.svg');
+}
+
+.sf-icon-circle-green {
+  mask-image: url('svg/circle.fill.green.svg');
+  -webkit-mask-image: url('svg/circle.fill.green.svg');
+}
+
+.sf-icon-info {
+  mask-image: url('svg/info.circle.svg');
+  -webkit-mask-image: url('svg/info.circle.svg');
+}
+
+.sf-icon-chart {
+  mask-image: url('svg/chart.line.uptrend.xyaxis.svg');
+  -webkit-mask-image: url('svg/chart.line.uptrend.xyaxis.svg');
+}
+
+.sf-icon-bolt {
+  mask-image: url('svg/bolt.fill.svg');
+  -webkit-mask-image: url('svg/bolt.fill.svg');
+}
+
+.sf-icon-checkmark {
+  mask-image: url('svg/checkmark.svg');
+  -webkit-mask-image: url('svg/checkmark.svg');
+}

@@ -72,7 +72,7 @@ class InventoryManager {
       this.db.prepare(`
         CREATE TABLE IF NOT EXISTS prescriptions (
           id INTEGER PRIMARY KEY AUTOINCREMENT,
-          prescription_name TEXT NOT NULL,
+          prescription_name TEXT,
           patient_name TEXT NOT NULL,
           total_items INTEGER NOT NULL,
           note TEXT,
@@ -81,6 +81,37 @@ class InventoryManager {
           updated_at TEXT NOT NULL DEFAULT (datetime('now'))
         )
       `).run();
+
+      // prescriptions 테이블의 prescription_name 컬럼 NOT NULL 제약조건 제거 안전 마이그레이션
+      try {
+        const tableInfo = this.db.pragma('table_info(prescriptions)');
+        const prescNameCol = tableInfo.find(col => col.name === 'prescription_name');
+        if (prescNameCol && prescNameCol.notnull === 1) {
+          this.db.transaction(() => {
+            this.db.prepare('ALTER TABLE prescriptions RENAME TO prescriptions_old').run();
+            this.db.prepare(`
+              CREATE TABLE prescriptions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                prescription_name TEXT,
+                patient_name TEXT NOT NULL,
+                total_items INTEGER NOT NULL,
+                note TEXT,
+                is_deducted INTEGER NOT NULL DEFAULT 1,
+                created_at TEXT NOT NULL DEFAULT (datetime('now')),
+                updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+              )
+            `).run();
+            this.db.prepare(`
+              INSERT INTO prescriptions (id, prescription_name, patient_name, total_items, note, is_deducted, created_at, updated_at)
+              SELECT id, prescription_name, patient_name, total_items, note, is_deducted, created_at, updated_at FROM prescriptions_old
+            `).run();
+            this.db.prepare('DROP TABLE prescriptions_old').run();
+          })();
+          console.log('[Migration] prescriptions.prescription_name nullable 마이그레이션 완료');
+        }
+      } catch (e) {
+        console.error('[Migration Error] prescriptions.prescription_name 마이그레이션 중 오류:', e);
+      }
 
       // 만약 기존 테이블이 존재하여 note, is_deducted 컬럼이 없는 경우를 위한 안전장치 마이그레이션 실행
       try {
@@ -169,6 +200,29 @@ class InventoryManager {
         )
       `).run();
 
+      // 처방전 프리셋 마스터 테이블 생성
+      this.db.prepare(`
+        CREATE TABLE IF NOT EXISTS prescription_presets (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          preset_name TEXT NOT NULL,
+          note TEXT,
+          created_at TEXT NOT NULL DEFAULT (datetime('now')),
+          updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+        )
+      `).run();
+
+      // 처방전 프리셋 상세 약재 테이블 생성
+      this.db.prepare(`
+        CREATE TABLE IF NOT EXISTS prescription_preset_items (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          preset_id INTEGER NOT NULL,
+          medicine_id INTEGER NOT NULL,
+          amount REAL NOT NULL,
+          FOREIGN KEY(preset_id) REFERENCES prescription_presets(id) ON DELETE CASCADE,
+          FOREIGN KEY(medicine_id) REFERENCES medicines(id)
+        )
+      `).run();
+
       const tablesToMigration = ['categories', 'medicines', 'prescriptions'];
       tablesToMigration.forEach(table => {
         try {
@@ -230,6 +284,17 @@ class InventoryManager {
    * @returns {Promise<boolean>} 연결 성공 여부
    */
   async setupSupabase(url, key) {
+    if (url) {
+      url = url.trim();
+      if (!/^https?:\/\//i.test(url)) {
+        if (!url.includes('.')) {
+          url = `https://${url}.supabase.co`;
+        } else {
+          url = `https://${url}`;
+        }
+      }
+    }
+
     if (!url || !key) {
       if (this.realtimeChannel) {
         this.supabase.removeChannel(this.realtimeChannel);
@@ -455,6 +520,29 @@ class InventoryManager {
                 updated_at=excluded.updated_at
             `).run(newRow.id, newRow.medicine_id, newRow.alias, sqliteTime);
           }
+        } else if (table === 'prescription_presets') {
+          if (this.shouldOverwriteWithRemote('prescription_presets', newRow.id, newRow.updated_at)) {
+            const cTime = this.formatToSqliteTime(newRow.created_at);
+            const uTime = this.formatToSqliteTime(newRow.updated_at);
+            this.db.prepare(`
+              INSERT INTO prescription_presets (id, preset_name, note, created_at, updated_at)
+              VALUES (?, ?, ?, ?, ?)
+              ON CONFLICT(id) DO UPDATE SET
+                preset_name=excluded.preset_name,
+                note=excluded.note,
+                created_at=excluded.created_at,
+                updated_at=excluded.updated_at
+            `).run(newRow.id, newRow.preset_name, newRow.note, cTime, uTime);
+          }
+        } else if (table === 'prescription_preset_items') {
+          this.db.prepare(`
+            INSERT INTO prescription_preset_items (id, preset_id, medicine_id, amount)
+            VALUES (?, ?, ?, ?)
+            ON CONFLICT(id) DO UPDATE SET
+              preset_id=excluded.preset_id,
+              medicine_id=excluded.medicine_id,
+              amount=excluded.amount
+          `).run(newRow.id, newRow.preset_id, newRow.medicine_id, newRow.amount);
         }
       } else if (eventType === 'DELETE') {
         const deletedId = oldRow.id;
@@ -470,6 +558,10 @@ class InventoryManager {
           this.db.prepare('DELETE FROM stock_logs WHERE id = ?').run(deletedId);
         } else if (table === 'medicine_aliases') {
           this.db.prepare('DELETE FROM medicine_aliases WHERE id = ?').run(deletedId);
+        } else if (table === 'prescription_presets') {
+          this.db.prepare('DELETE FROM prescription_presets WHERE id = ?').run(deletedId);
+        } else if (table === 'prescription_preset_items') {
+          this.db.prepare('DELETE FROM prescription_preset_items WHERE id = ?').run(deletedId);
         }
       }
 
@@ -522,6 +614,8 @@ class InventoryManager {
         data = this.db.prepare('SELECT * FROM stock_logs WHERE id = ?').get(recId);
       } else if (table === 'medicine_aliases') {
         data = this.db.prepare('SELECT * FROM medicine_aliases WHERE id = ?').get(recId);
+      } else if (table === 'prescription_presets') {
+        data = this.db.prepare('SELECT * FROM prescription_presets WHERE id = ?').get(recId);
       }
 
       if (!data) return;
@@ -943,6 +1037,95 @@ class InventoryManager {
         });
         transaction();
         console.log(`[Supabase Sync] medicine_aliases ${aliasesToLocal.length}건 다운로드 적용 완료.`);
+      }
+
+      // 5.6. prescription_presets & prescription_preset_items 동기화
+      const localPresets = this.db.prepare('SELECT * FROM prescription_presets').all();
+      const { data: remotePresets, error: errPresets } = await this.supabase.from('prescription_presets').select('*');
+      if (errPresets) throw errPresets;
+
+      const remotePresetsMap = new Map(remotePresets.map(p => [p.id, p]));
+
+      const presetsToRemote = [];
+      const presetItemsToRemote = [];
+      for (const lp of localPresets) {
+        const rp = remotePresetsMap.get(lp.id);
+        const localTime = new Date(this.parseSqliteTime(lp.updated_at)).getTime();
+
+        if (!rp || localTime > new Date(rp.updated_at).getTime()) {
+          presetsToRemote.push({
+            id: lp.id,
+            preset_name: lp.preset_name,
+            note: lp.note,
+            created_at: this.parseSqliteTime(lp.created_at),
+            updated_at: this.parseSqliteTime(lp.updated_at)
+          });
+          
+          const items = this.db.prepare('SELECT * FROM prescription_preset_items WHERE preset_id = ?').all(lp.id);
+          if (items && items.length > 0) {
+            presetItemsToRemote.push(...items);
+          }
+        }
+      }
+      if (presetsToRemote.length > 0) {
+        const { error: upsertErr } = await this.supabase.from('prescription_presets').upsert(presetsToRemote);
+        if (upsertErr) throw upsertErr;
+        console.log(`[Supabase Sync] prescription_presets ${presetsToRemote.length}건 업로드 성공.`);
+      }
+      if (presetItemsToRemote.length > 0) {
+        const { error: upsertErr } = await this.supabase.from('prescription_preset_items').upsert(presetItemsToRemote);
+        if (upsertErr) throw upsertErr;
+        console.log(`[Supabase Sync] prescription_preset_items ${presetItemsToRemote.length}건 업로드 성공.`);
+      }
+
+      const localPresetsMap = new Map(localPresets.map(p => [p.id, p]));
+      const presetsToLocal = [];
+      for (const rp of remotePresets) {
+        const lp = localPresetsMap.get(rp.id);
+        const remoteTime = new Date(rp.updated_at).getTime();
+
+        if (!lp || remoteTime > new Date(this.parseSqliteTime(lp.updated_at)).getTime()) {
+          presetsToLocal.push(rp);
+        }
+      }
+      if (presetsToLocal.length > 0) {
+        const transaction = this.db.transaction(() => {
+          const stmt = this.db.prepare(`
+            INSERT INTO prescription_presets (id, preset_name, note, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?)
+            ON CONFLICT(id) DO UPDATE SET
+              preset_name=excluded.preset_name,
+              note=excluded.note,
+              created_at=excluded.created_at,
+              updated_at=excluded.updated_at
+          `);
+          for (const rp of presetsToLocal) {
+            const cTime = this.formatToSqliteTime(rp.created_at);
+            const uTime = this.formatToSqliteTime(rp.updated_at);
+            stmt.run(rp.id, rp.preset_name, rp.note, cTime, uTime);
+          }
+        });
+        transaction();
+
+        const ids = presetsToLocal.map(p => p.id);
+        const { data: rItems, error: rItemsErr } = await this.supabase.from('prescription_preset_items').select('*').in('preset_id', ids);
+        if (!rItemsErr && rItems && rItems.length > 0) {
+          const itemTx = this.db.transaction(() => {
+            const itemStmt = this.db.prepare(`
+              INSERT INTO prescription_preset_items (id, preset_id, medicine_id, amount)
+              VALUES (?, ?, ?, ?)
+              ON CONFLICT(id) DO UPDATE SET
+                preset_id=excluded.preset_id,
+                medicine_id=excluded.medicine_id,
+                amount=excluded.amount
+            `);
+            for (const rit of rItems) {
+              itemStmt.run(rit.id, rit.preset_id, rit.medicine_id, rit.amount);
+            }
+          });
+          itemTx();
+        }
+        console.log(`[Supabase Sync] prescription_presets ${presetsToLocal.length}건 및 하위 품목 다운로드 완료.`);
       }
 
       console.log('[Supabase Sync] 양방향 전체 벌크 동기화 완료!');
@@ -1505,7 +1688,8 @@ class InventoryManager {
         for (const item of items) {
           itemStmt.run(pId, item.medicineId, item.amount);
           if (isDeducted) {
-            const logId = this.consumeStockLocally(item.medicineId, item.amount, pId, `${prescriptionName} 처방 (${patientName})`);
+            const displayPrescName = prescriptionName ? `${prescriptionName} 처방` : '처방';
+            const logId = this.consumeStockLocally(item.medicineId, item.amount, pId, `${displayPrescName} (${patientName})`);
             if (logId > 0) {
               newLogIdsToSync.push(logId);
             }
@@ -1724,7 +1908,8 @@ class InventoryManager {
       for (const item of items) {
         itemStmt.run(pId, item.medicineId, item.amount);
         if (isDeducted) {
-          const logId = this.consumeStockLocally(item.medicineId, item.amount, pId, `${prescriptionName} 처방 (${patientName})`);
+          const displayPrescName = prescriptionName ? `${prescriptionName} 처방` : '처방';
+          const logId = this.consumeStockLocally(item.medicineId, item.amount, pId, `${displayPrescName} (${patientName})`);
           if (logId > 0) {
             logIdsToSync.push(logId);
           }
@@ -1861,7 +2046,8 @@ class InventoryManager {
       `).run(this.getAdjustedSqliteTime(), pId);
 
       for (const item of items) {
-        const logId = this.consumeStockLocally(item.medicine_id, item.amount, pId, `${presc.prescription_name} 처방 (${presc.patient_name})`);
+        const displayPrescName = presc.prescription_name ? `${presc.prescription_name} 처방` : '처방';
+        const logId = this.consumeStockLocally(item.medicine_id, item.amount, pId, `${displayPrescName} (${presc.patient_name})`);
         if (logId > 0) {
           logIdsToSync.push(logId);
         }
@@ -1906,6 +2092,144 @@ class InventoryManager {
   deleteNotification(id) {
     this.db.prepare('DELETE FROM notifications WHERE id = ?').run(id);
     return true;
+  }
+
+  // ==========================================
+  // 처방 프리셋 관리 API
+  // ==========================================
+
+  getAllPresets() {
+    return this.db.prepare(`
+      SELECT p.*, (SELECT COUNT(*) FROM prescription_preset_items ppi WHERE ppi.preset_id = p.id) as total_items
+      FROM prescription_presets p
+      ORDER BY p.created_at DESC, p.id DESC
+    `).all();
+  }
+
+  getPresetDetails(presetId) {
+    const prId = Number(presetId);
+    const preset = this.db.prepare('SELECT * FROM prescription_presets WHERE id = ?').get(prId);
+    if (!preset) throw new Error('처방 프리셋 정보를 찾을 수 없습니다.');
+
+    const items = this.db.prepare(`
+      SELECT ppi.medicine_id, ppi.amount, m.name as medicine_name, m.unit
+      FROM prescription_preset_items ppi
+      JOIN medicines m ON ppi.medicine_id = m.id
+      WHERE ppi.preset_id = ?
+    `).all(prId);
+
+    return {
+      ...preset,
+      items
+    };
+  }
+
+  addPreset(presetName, note, items) {
+    if (!presetName || presetName.trim() === '') {
+      throw new Error('프리셋 이름을 입력해 주세요.');
+    }
+    if (!items || items.length === 0) {
+      throw new Error('프리셋에 약재가 포함되어야 합니다.');
+    }
+
+    let presetId = 0;
+    this.db.transaction(() => {
+      const nowTime = this.getAdjustedSqliteTime();
+      const res = this.db.prepare(`
+        INSERT INTO prescription_presets (preset_name, note, created_at, updated_at)
+        VALUES (?, ?, ?, ?)
+      `).run(presetName.trim(), note || '', nowTime, nowTime);
+      presetId = res.lastInsertRowid;
+
+      const itemStmt = this.db.prepare(`
+        INSERT INTO prescription_preset_items (preset_id, medicine_id, amount)
+        VALUES (?, ?, ?)
+      `);
+
+      for (const item of items) {
+        itemStmt.run(presetId, item.medicineId, item.amount);
+      }
+    })();
+
+    if (this.supabase) {
+      this.syncPresetToSupabase(presetId).catch(err => console.error('[Supabase Sync Error] addPreset sync:', err));
+    }
+
+    return presetId;
+  }
+
+  updatePreset(presetId, presetName, note, items) {
+    const prId = Number(presetId);
+    if (!presetName || presetName.trim() === '') {
+      throw new Error('프리셋 이름을 입력해 주세요.');
+    }
+    if (!items || items.length === 0) {
+      throw new Error('프리셋에 약재가 포함되어야 합니다.');
+    }
+
+    this.db.transaction(() => {
+      const nowTime = this.getAdjustedSqliteTime();
+      // 1. prescription_presets 업데이트
+      this.db.prepare(`
+        UPDATE prescription_presets 
+        SET preset_name = ?, note = ?, updated_at = ?
+        WHERE id = ?
+      `).run(presetName.trim(), note || '', nowTime, prId);
+
+      // 2. 기존 prescription_preset_items 삭제
+      this.db.prepare('DELETE FROM prescription_preset_items WHERE preset_id = ?').run(prId);
+
+      // 3. 신규 prescription_preset_items 삽입
+      const itemStmt = this.db.prepare(`
+        INSERT INTO prescription_preset_items (preset_id, medicine_id, amount)
+        VALUES (?, ?, ?)
+      `);
+
+      for (const item of items) {
+        itemStmt.run(prId, item.medicineId, item.amount);
+      }
+    })();
+
+    if (this.supabase) {
+      this.syncPresetToSupabase(prId).catch(err => console.error('[Supabase Sync Error] updatePreset sync:', err));
+    }
+
+    return prId;
+  }
+
+  deletePreset(presetId) {
+    const prId = Number(presetId);
+    this.db.transaction(() => {
+      this.recordDeleted('prescription_presets', prId);
+      // 외래 키 ON DELETE CASCADE 제약에 의해 prescription_preset_items는 자동 삭제됨
+      this.db.prepare('DELETE FROM prescription_presets WHERE id = ?').run(prId);
+    })();
+
+    if (this.supabase) {
+      this.syncDeletedToSupabase('prescription_presets', prId).catch(err => console.error('[Supabase Sync Error] deletePreset sync:', err));
+    }
+    return true;
+  }
+
+  async syncPresetToSupabase(presetId) {
+    if (!this.supabase) return;
+    const prId = Number(presetId);
+
+    try {
+      await this.syncItemToSupabase('prescription_presets', prId);
+
+      // 원격 Supabase의 기존 preset_items 삭제 후 최신 로컬 정보로 덮어씀 (동기화 정합성 확보)
+      await this.supabase.from('prescription_preset_items').delete().eq('preset_id', prId);
+
+      const items = this.db.prepare('SELECT * FROM prescription_preset_items WHERE preset_id = ?').all(prId);
+      if (items && items.length > 0) {
+        const { error } = await this.supabase.from('prescription_preset_items').insert(items);
+        if (error) throw error;
+      }
+      console.log(`[Supabase Sync] 처방 프리셋 ${prId} 및 하위 항목 동기화 완료.`);
+    } catch (err) {
+      console.error(`[Supabase Sync] 처방 프리셋 ${prId} 동기화 실패:`, err.message);
+    }
   }
 }
 
