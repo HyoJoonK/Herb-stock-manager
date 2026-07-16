@@ -311,6 +311,11 @@ function renderMedicineList(categoryFilter = null) {
 
     listContainer.appendChild(item);
   });
+
+  if (searchEngine && searchEngine.state === 'list') {
+    const items = Array.from(listContainer.querySelectorAll('.medicine-item'));
+    searchEngine.updateActiveListItem(items);
+  }
 }
 
 // ----------------------------------------------------
@@ -504,7 +509,7 @@ function renderInquiryLogs(medId) {
     else if (log.type === 'WASTE') typeBadge = '<span class="status-badge status-warning">폐기</span>';
 
     let qtyFormatted = '';
-    let colorStyle = 'var(--color-text)';
+    let colorStyle = 'var(--color-text-main)';
     if (log.quantity === 0) {
       qtyFormatted = '-';
     } else {
@@ -821,7 +826,7 @@ function renderBatchTable() {
         </select>
       </td>
       ${checkUI}
-      <td><input type="text" class="batch-unit" value="${item.unit}" style="width:40px;" ${item.is_presence_only === 1 ? 'disabled style="background:var(--color-bg-secondary); color:var(--color-text-muted); text-align:center;"' : ''}></td>
+      <td><input type="text" class="batch-unit" value="${item.unit}" style="width:40px;" ${item.is_presence_only === 1 ? 'disabled style="background:var(--bg-primary); color:var(--color-text-muted); text-align:center;"' : ''}></td>
       <td>
         <span class="batch-remove-btn" style="cursor:pointer;"><span class="sf-icon sf-icon-xmark"></span></span>
       </td>
@@ -838,6 +843,27 @@ function saveBatchChanges() {
   const rows = Array.from(tbody.querySelectorAll('tr'));
   if (rows.length === 0) return;
 
+  // 1. 유효성 사전 검사 (동작 원자성 확보)
+  for (const row of rows) {
+    const checkbox = row.querySelector('.batch-presence-checkbox');
+    const isPresenceOnly = !!checkbox;
+
+    if (!isPresenceOnly) {
+      const pack_size = parseFloat(row.querySelector('.batch-pack').value);
+      const opened_pack_remain = parseFloat(row.querySelector('.batch-remain').value) || 0;
+
+      if (isNaN(pack_size) || pack_size <= 0) {
+        alert(`"${row.cells[0].textContent}"의 팩 규격은 0보다 커야 합니다.`);
+        return;
+      }
+      if (opened_pack_remain > pack_size) {
+        alert(`"${row.cells[0].textContent}"의 개봉 잔량은 팩 규격을 초과할 수 없습니다.`);
+        return;
+      }
+    }
+  }
+
+  // 2. 실제 데이터 반영
   let successCount = 0;
   let hasError = false;
 
@@ -845,7 +871,6 @@ function saveBatchChanges() {
     const id = parseInt(row.dataset.id);
     const category_id = parseInt(row.querySelector('.batch-cat').value);
     
-    // 단순 유무 관리 약재 체크박스 조회
     const checkbox = row.querySelector('.batch-presence-checkbox');
     const isPresenceOnly = !!checkbox;
 
@@ -863,21 +888,9 @@ function saveBatchChanges() {
       opened_pack_remain = parseFloat(row.querySelector('.batch-remain').value) || 0;
       safety_stock = parseFloat(row.querySelector('.batch-safety').value) || 0;
       unit = row.querySelector('.batch-unit').value.trim() || 'g';
-
-      if (isNaN(pack_size) || pack_size <= 0) {
-        alert('팩 규격은 0보다 커야 합니다.');
-        hasError = true;
-        break;
-      }
-      if (opened_pack_remain > pack_size) {
-        alert('개봉 잔량은 팩 규격을 초과할 수 없습니다.');
-        hasError = true;
-        break;
-      }
     }
 
     try {
-      // DB UPDATE 실행 (단순 유무 관리 플래그 명시적 전달)
       dbManager.updateMedicine(id, {
         category_id,
         pack_size,
@@ -1247,7 +1260,7 @@ function toggleMedTypeFields(isPresence) {
   const remainEl = document.getElementById('editMedRemain');
   const safetyEl = document.getElementById('editMedSafety');
   const unitEl = document.getElementById('editMedUnit');
-  const unopenedLabel = unopenedEl.previousElementSibling;
+  const unopenedLabel = document.querySelector('label[for="editMedUnopened"]');
 
   const packSizeGroup = packSizeEl.closest('.input-group');
   const remainGroup = remainEl.closest('.input-group');
@@ -1341,8 +1354,13 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!isNaN(val) && val > 0) {
           currentPrescriptionItems[index].amount = val;
         }
-        const completeBtn = document.getElementById('btnDeductStock');
-        if (completeBtn) completeBtn.click();
+        if (currentPrescMode === 'preset') {
+          const savePresetBtn = document.getElementById('btnSavePreset');
+          if (savePresetBtn) savePresetBtn.click();
+        } else {
+          const completeBtn = document.getElementById('btnDeductStock');
+          if (completeBtn) completeBtn.click();
+        }
       }
     });
     prescTbody.addEventListener('click', (e) => {
@@ -1582,6 +1600,10 @@ document.addEventListener('DOMContentLoaded', () => {
       
       // 검색창 강제 포커싱
       searchEngine.setFocusState('search');
+    } else {
+      if (document.activeElement) {
+        document.activeElement.blur();
+      }
     }
 
     // 4. 탭 전용 화면 렌더링 갱신

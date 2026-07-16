@@ -28,7 +28,19 @@ class InventoryManager {
     this.supabase = null; // Supabase 클라이언트 인스턴스
     this.clockOffset = 0;
     
+    // 동기화 큐 상태 필드 초기화
+    this.isProcessingSync = false;
+    this.syncRetryTimer = null;
+
     this.initDb();
+
+    // 브라우저 온라인 전환 감지 리스너 등록
+    if (typeof window !== 'undefined') {
+      window.addEventListener('online', () => {
+        console.log('[Sync Queue] 인터넷 연결이 감지되었습니다. 동기화 큐를 처리합니다...');
+        this.processSyncQueue().catch(err => console.error('[Sync Queue] 온라인 전환 동기화 중 오류:', err));
+      });
+    }
   }
 
   /**
@@ -223,6 +235,18 @@ class InventoryManager {
         )
       `).run();
 
+      // Supabase 동기화 큐 테이블 생성
+      this.db.prepare(`
+        CREATE TABLE IF NOT EXISTS sync_queue (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          table_name TEXT NOT NULL,
+          record_id INTEGER NOT NULL,
+          action TEXT NOT NULL CHECK(action IN ('UPSERT', 'DELETE', 'REPLACE_PRESET_ITEMS')),
+          created_at TEXT NOT NULL DEFAULT (datetime('now')),
+          UNIQUE(table_name, record_id, action)
+        )
+      `).run();
+
       const tablesToMigration = ['categories', 'medicines', 'prescriptions'];
       tablesToMigration.forEach(table => {
         try {
@@ -326,6 +350,7 @@ class InventoryManager {
 
       await this.syncAll();
       this.subscribeRealtime();
+      this.processSyncQueue().catch(err => console.error('[Sync Queue] 최초 구동 시 큐 처리 오류:', err));
 
       return true;
     } catch (err) {
@@ -596,85 +621,218 @@ class InventoryManager {
   }
 
   /**
-   * 백그라운드로 특정 테이블의 특정 데이터를 Supabase에 Upsert (비동기)
+   * Supabase에 직접 특정 데이터를 Upsert (에러 전파)
+   */
+  async syncItemToSupabaseDirect(table, id) {
+    if (!this.supabase) throw new Error('Supabase 클라이언트가 초기화되지 않았습니다.');
+    const recId = Number(id);
+
+    let data = null;
+    if (table === 'categories') {
+      data = this.db.prepare('SELECT * FROM categories WHERE id = ?').get(recId);
+    } else if (table === 'medicines') {
+      data = this.db.prepare('SELECT * FROM medicines WHERE id = ?').get(recId);
+    } else if (table === 'prescriptions') {
+      data = this.db.prepare('SELECT * FROM prescriptions WHERE id = ?').get(recId);
+    } else if (table === 'stock_logs') {
+      data = this.db.prepare('SELECT * FROM stock_logs WHERE id = ?').get(recId);
+    } else if (table === 'medicine_aliases') {
+      data = this.db.prepare('SELECT * FROM medicine_aliases WHERE id = ?').get(recId);
+    } else if (table === 'prescription_presets') {
+      data = this.db.prepare('SELECT * FROM prescription_presets WHERE id = ?').get(recId);
+    } else if (table === 'prescription_items') {
+      data = this.db.prepare('SELECT * FROM prescription_items WHERE id = ?').get(recId);
+    }
+
+    if (!data) {
+      console.warn(`[Supabase Sync Direct] ${table} (ID: ${recId}) 데이터가 로컬에 존재하지 않아 업로드를 스킵합니다.`);
+      return;
+    }
+
+    const payload = { ...data };
+    if (payload.updated_at) {
+      payload.updated_at = this.parseSqliteTime(payload.updated_at);
+    }
+    if (payload.created_at) {
+      payload.created_at = this.parseSqliteTime(payload.created_at);
+    }
+    if (payload.timestamp) {
+      payload.timestamp = this.parseSqliteTime(payload.timestamp);
+    }
+
+    const { error } = await this.supabase.from(table).upsert(payload);
+    if (error) {
+      throw error;
+    }
+    console.log(`[Supabase Sync Direct] ${table} (ID: ${recId}) 업로드 성공.`);
+  }
+
+  /**
+   * Supabase에 직접 삭제 이력을 전송 (에러 전파)
+   */
+  async syncDeletedToSupabaseDirect(table, id) {
+    if (!this.supabase) throw new Error('Supabase 클라이언트가 초기화되지 않았습니다.');
+    const recId = Number(id);
+
+    const { error } = await this.supabase.from(table).delete().eq('id', recId);
+    if (error) {
+      throw error;
+    }
+    
+    this.db.prepare('DELETE FROM deleted_records WHERE table_name = ? AND record_id = ?').run(table, recId);
+    console.log(`[Supabase Sync Direct] ${table} (ID: ${recId}) 삭제 동기화 완료.`);
+  }
+
+  /**
+   * 원격 Supabase의 처방 프리셋 하위 아이템 교체 (에러 전파)
+   */
+  async syncPresetItemsDirect(prId) {
+    if (!this.supabase) throw new Error('Supabase 클라이언트가 초기화되지 않았습니다.');
+    const { error } = await this.supabase.from('prescription_preset_items').delete().eq('preset_id', prId);
+    if (error) throw error;
+
+    const items = this.db.prepare('SELECT * FROM prescription_preset_items WHERE preset_id = ?').all(prId);
+    if (items && items.length > 0) {
+      const { error: insError } = await this.supabase.from('prescription_preset_items').insert(items);
+      if (insError) throw insError;
+    }
+    console.log(`[Supabase Sync Direct] 처방 프리셋 ${prId} 하위 항목 동기화 완료.`);
+  }
+
+  /**
+   * 동기화 작업을 로컬 SQLite 큐에 등록하고 처리를 트리거합니다.
+   * @param {string} table 테이블 이름
+   * @param {number} id 레코드 ID
+   * @param {string} action 'UPSERT' 또는 'DELETE' 또는 'REPLACE_PRESET_ITEMS'
+   */
+  enqueueSync(table, id, action) {
+    const recId = Number(id);
+    try {
+      this.db.prepare(`
+        INSERT INTO sync_queue (table_name, record_id, action, created_at)
+        VALUES (?, ?, ?, ?)
+        ON CONFLICT(table_name, record_id, action) 
+        DO UPDATE SET created_at = excluded.created_at
+      `).run(table, recId, action, this.getAdjustedSqliteTime());
+      
+      console.log(`[Sync Queue] 큐 등록 완료: ${action} - ${table} (ID: ${recId})`);
+      
+      this.processSyncQueue().catch(err => {
+        console.error('[Sync Queue] 큐 실행 오류:', err);
+      });
+    } catch (e) {
+      console.error('[Sync Queue] 큐 삽입 실패:', e);
+    }
+  }
+
+  /**
+   * SQLite 큐에 대기 중인 동기화 작업을 순차적으로 꺼내 Supabase에 업로드합니다.
+   */
+  async processSyncQueue() {
+    if (this.isProcessingSync) return;
+    if (!this.supabase) {
+      console.log('[Sync Queue] Supabase 연결이 설정되어 있지 않아 큐 처리를 보류합니다.');
+      return;
+    }
+    
+    // 브라우저 환경이고 오프라인 상태이면 중단
+    if (typeof window !== 'undefined' && typeof window.navigator !== 'undefined' && !window.navigator.onLine) {
+      console.log('[Sync Queue] 네트워크 오프라인 상태이므로 큐 처리를 중단합니다.');
+      return;
+    }
+
+    this.isProcessingSync = true;
+    console.log('[Sync Queue] 큐 처리를 시작합니다...');
+
+    try {
+      if (this.syncRetryTimer) {
+        clearTimeout(this.syncRetryTimer);
+        this.syncRetryTimer = null;
+      }
+
+      while (true) {
+        // 큐에서 가장 먼저 등록된 작업 1개 조회
+        const task = this.db.prepare(`
+          SELECT * FROM sync_queue ORDER BY id ASC LIMIT 1
+        `).get();
+
+        if (!task) {
+          console.log('[Sync Queue] 모든 동기화 작업이 성공적으로 처리되었습니다.');
+          break;
+        }
+
+        const { id, table_name, record_id, action } = task;
+        console.log(`[Sync Queue] 작업 처리 중 - ID: ${id}, 액션: ${action}, 테이블: ${table_name}, 레코드ID: ${record_id}`);
+
+        try {
+          if (action === 'UPSERT') {
+            await this.syncItemToSupabaseDirect(table_name, record_id);
+          } else if (action === 'DELETE') {
+            await this.syncDeletedToSupabaseDirect(table_name, record_id);
+          } else if (action === 'REPLACE_PRESET_ITEMS') {
+            await this.syncPresetItemsDirect(record_id);
+          }
+
+          // 성공적으로 처리되면 큐에서 삭제
+          this.db.prepare('DELETE FROM sync_queue WHERE id = ?').run(id);
+        } catch (taskErr) {
+          console.error(`[Sync Queue] 작업 처리 실패 (테이블: ${table_name}, ID: ${record_id}):`, taskErr.message);
+          
+          const isNetworkError = !taskErr.status || taskErr.status >= 500 || taskErr.message.includes('fetch') || taskErr.message.includes('network');
+          
+          if (isNetworkError) {
+            console.log('[Sync Queue] 네트워크 장애가 발생한 것으로 간주하여 큐 처리를 일시 정지하고 재시도 스케줄을 잡습니다.');
+            this.scheduleSyncRetry();
+            break;
+          } else {
+            console.warn('[Sync Queue] 복구 불가능한 에러로 판단되어 해당 큐 항목을 스킵하고 삭제합니다.');
+            this.db.prepare('DELETE FROM sync_queue WHERE id = ?').run(id);
+          }
+        }
+      }
+    } finally {
+      this.isProcessingSync = false;
+    }
+  }
+
+  /**
+   * 동기화 재시도 타이머를 설정합니다. (30초 후)
+   */
+  scheduleSyncRetry() {
+    if (this.syncRetryTimer) return;
+    this.syncRetryTimer = setTimeout(() => {
+      this.syncRetryTimer = null;
+      console.log('[Sync Queue] 예정된 동기화 재시도를 실행합니다...');
+      this.processSyncQueue().catch(err => console.error('[Sync Queue] 재시도 실행 오류:', err));
+    }, 30000);
+  }
+
+  /**
+   * 백그라운드로 특정 테이블의 특정 데이터를 Supabase에 Upsert (동기화 큐 이용)
    */
   async syncItemToSupabase(table, id) {
-    if (!this.supabase) return;
-    const recId = Number(id);
-
-    try {
-      let data = null;
-      if (table === 'categories') {
-        data = this.db.prepare('SELECT * FROM categories WHERE id = ?').get(recId);
-      } else if (table === 'medicines') {
-        data = this.db.prepare('SELECT * FROM medicines WHERE id = ?').get(recId);
-      } else if (table === 'prescriptions') {
-        data = this.db.prepare('SELECT * FROM prescriptions WHERE id = ?').get(recId);
-      } else if (table === 'stock_logs') {
-        data = this.db.prepare('SELECT * FROM stock_logs WHERE id = ?').get(recId);
-      } else if (table === 'medicine_aliases') {
-        data = this.db.prepare('SELECT * FROM medicine_aliases WHERE id = ?').get(recId);
-      } else if (table === 'prescription_presets') {
-        data = this.db.prepare('SELECT * FROM prescription_presets WHERE id = ?').get(recId);
-      }
-
-      if (!data) return;
-
-      const payload = { ...data };
-      if (payload.updated_at) {
-        payload.updated_at = this.parseSqliteTime(payload.updated_at);
-      }
-      if (payload.created_at) {
-        payload.created_at = this.parseSqliteTime(payload.created_at);
-      }
-      if (payload.timestamp) {
-        payload.timestamp = this.parseSqliteTime(payload.timestamp);
-      }
-
-      const { error } = await this.supabase.from(table).upsert(payload);
-      if (error) throw error;
-      console.log(`[Supabase Sync] ${table} (ID: ${recId}) 업로드 성공.`);
-    } catch (err) {
-      console.error(`[Supabase Sync] ${table} (ID: ${recId}) 업로드 실패:`, err.message);
-    }
+    this.enqueueSync(table, id, 'UPSERT');
   }
 
   /**
-   * 백그라운드로 삭제 이력을 Supabase에 전송 (비동기)
+   * 백그라운드로 삭제 이력을 Supabase에 전송 (동기화 큐 이용)
    */
   async syncDeletedToSupabase(table, id) {
-    if (!this.supabase) return;
-    const recId = Number(id);
-
-    try {
-      const { error } = await this.supabase.from(table).delete().eq('id', recId);
-      if (error) throw error;
-      
-      this.db.prepare('DELETE FROM deleted_records WHERE table_name = ? AND record_id = ?').run(table, recId);
-      console.log(`[Supabase Sync] ${table} (ID: ${recId}) 삭제 동기화 완료.`);
-    } catch (err) {
-      console.error(`[Supabase Sync] ${table} (ID: ${recId}) 삭제 동기화 실패:`, err.message);
-    }
+    this.enqueueSync(table, id, 'DELETE');
   }
 
   /**
-   * 처방전 생성 시 처방과 처방 아이템을 한꺼번에 동기화
+   * 처방전 생성 시 처방과 처방 아이템을 한꺼번에 동기화 (동기화 큐 이용)
    */
   async syncPrescriptionToSupabase(prescId) {
-    if (!this.supabase) return;
     const pId = Number(prescId);
+    this.enqueueSync('prescriptions', pId, 'UPSERT');
 
-    try {
-      await this.syncItemToSupabase('prescriptions', pId);
-
-      const items = this.db.prepare('SELECT * FROM prescription_items WHERE prescription_id = ?').all(pId);
-      if (items && items.length > 0) {
-        const { error } = await this.supabase.from('prescription_items').upsert(items);
-        if (error) throw error;
+    const items = this.db.prepare('SELECT * FROM prescription_items WHERE prescription_id = ?').all(pId);
+    if (items && items.length > 0) {
+      for (const item of items) {
+        this.enqueueSync('prescription_items', item.id, 'UPSERT');
       }
-      console.log(`[Supabase Sync] 처방전 ${pId} 및 하위 항목 동기화 완료.`);
-    } catch (err) {
-      console.error(`[Supabase Sync] 처방전 ${pId} 동기화 실패:`, err.message);
     }
   }
 
@@ -713,7 +871,7 @@ class InventoryManager {
       // 1-2. 로컬의 삭제 이력을 서버에 동기화
       const deletedList = this.db.prepare('SELECT * FROM deleted_records').all();
       for (const row of deletedList) {
-        await this.syncDeletedToSupabase(row.table_name, row.record_id);
+        await this.syncDeletedToSupabaseDirect(row.table_name, row.record_id);
       }
 
       // 2. categories 동기화

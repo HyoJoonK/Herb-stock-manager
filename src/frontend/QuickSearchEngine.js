@@ -70,10 +70,15 @@ class QuickSearchEngine {
 
     // 윈도우 전체에 포커스가 다시 들어왔을 때 포커스 복구 안전장치
     window.addEventListener('focus', () => {
+      // 발주 예측 탭(index 2)인 경우 포커스 복구 스킵
+      if (this.activeTab === 2) return;
+
       // 모달이나 팝업창이 없는 기본 상태이면서 검색창에 포커스가 없는 경우 검색창으로 포커스 강제
       const activeModal = document.querySelector('.modal-overlay.show, .popup-overlay.show');
       if (!activeModal && this.state === 'search' && document.activeElement !== this.elements.searchInput) {
-        this.elements.searchInput.focus();
+        if (this.elements.searchInput) {
+          this.elements.searchInput.focus();
+        }
       }
     });
     

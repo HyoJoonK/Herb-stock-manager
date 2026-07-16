@@ -1,0 +1,250 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <title>Herb Stock Loading...</title>
+  <link rel="stylesheet" href="sf-icons.css">
+  <style>
+    :root {
+      --bg-gradient-start: #2d5a27; /* 딥 포레스트 세이지 그린 */
+      --bg-gradient-end: #1b3d17;   /* 더 깊은 어두운 그린 */
+      --color-accent: #52b788;      /* 맑은 리프 그린 */
+      --color-text-main: #ffffff;
+      --color-text-muted: #a3bfa8;  /* 연한 연두색 */
+      --radius-lg: 16px;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans KR", sans-serif;
+      background: transparent;
+      overflow: hidden;
+      height: 100vh;
+      width: 100vw;
+      margin: 0;
+      padding: 0;
+    }
+
+    .splash-container {
+      width: 100%;
+      height: 100%;
+      background: linear-gradient(135deg, var(--bg-gradient-start), var(--bg-gradient-end));
+      border-radius: var(--radius-lg);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: space-between;
+      padding: 35px 25px;
+      color: var(--color-text-main);
+      text-align: center;
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      position: relative;
+    }
+
+    /* Brand Logo & Name */
+    .brand-section {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 12px;
+      margin-top: 10px;
+    }
+
+    .logo-wrapper {
+      width: 68px;
+      height: 68px;
+      background: rgba(255, 255, 255, 0.08);
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      animation: pulse 2s infinite ease-in-out;
+    }
+
+    .logo-icon {
+      font-size: 34px;
+      color: var(--color-accent);
+      background-color: var(--color-accent) !important;
+    }
+
+    .brand-title {
+      font-size: 24px;
+      font-weight: 800;
+      letter-spacing: 0.5px;
+      text-shadow: 0 2px 4px rgba(0, 0, 0, 0.15);
+    }
+
+    .brand-subtitle {
+      font-size: 11px;
+      color: var(--color-text-muted);
+      font-weight: 400;
+      margin-top: -4px;
+      letter-spacing: 0.2px;
+    }
+
+    /* Status Section */
+    .status-section {
+      width: 100%;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 10px;
+    }
+
+    .status-text {
+      font-size: 12px;
+      font-weight: 500;
+      color: var(--color-text-main);
+      opacity: 0.95;
+      height: 18px; /* dynamic layout height */
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      width: 90%;
+    }
+
+    /* Progress Bar */
+    .progress-bar-container {
+      width: 85%;
+      height: 4px;
+      background: rgba(255, 255, 255, 0.12);
+      border-radius: 2px;
+      overflow: hidden;
+      position: relative;
+    }
+
+    .progress-bar-fill {
+      width: 0%;
+      height: 100%;
+      background: linear-gradient(90deg, var(--color-accent), #74c69d);
+      border-radius: 2px;
+      transition: width 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+      position: relative;
+    }
+
+    /* Shimmer effect for progress bar */
+    .progress-bar-fill::after {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: linear-gradient(
+        90deg,
+        rgba(255, 255, 255, 0) 0%,
+        rgba(255, 255, 255, 0.3) 50%,
+        rgba(255, 255, 255, 0) 100%
+      );
+      animation: shimmer 1.8s infinite;
+      background-size: 200% 100%;
+    }
+
+    @keyframes pulse {
+      0% {
+        transform: scale(1);
+        box-shadow: 0 0 0 0 rgba(82, 183, 136, 0.3);
+      }
+      50% {
+        transform: scale(1.06);
+        box-shadow: 0 0 0 8px rgba(82, 183, 136, 0);
+      }
+      100% {
+        transform: scale(1);
+        box-shadow: 0 0 0 0 rgba(82, 183, 136, 0);
+      }
+    }
+
+    @keyframes shimmer {
+      0% {
+        background-position: -200% 0;
+      }
+      100% {
+        background-position: 200% 0;
+      }
+    }
+
+    /* Decorative icon details */
+    .decor {
+      position: absolute;
+      font-size: 13px;
+      color: rgba(82, 183, 136, 0.25);
+    }
+    .decor-1 { top: 22px; left: 26px; transform: rotate(-12deg); }
+    .decor-2 { bottom: 26px; right: 26px; transform: rotate(15deg); }
+  </style>
+</head>
+<body>
+  <div class="splash-container">
+    <div class="decor decor-1"><span class="sf-icon sf-icon-sparkles"></span></div>
+    <div class="decor decor-2"><span class="sf-icon sf-icon-sparkles"></span></div>
+
+    <div class="brand-section">
+      <div class="logo-wrapper">
+        <span class="sf-icon sf-icon-leaf logo-icon"></span>
+      </div>
+      <div class="brand-title">Herb Stock</div>
+      <div class="brand-subtitle">약재 재고 관리 시스템</div>
+    </div>
+
+    <div class="status-section">
+      <div class="status-text" id="statusText">업데이트 정보를 확인하는 중...</div>
+      <div class="progress-bar-container">
+        <div class="progress-bar-fill" id="progressBar"></div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const { ipcRenderer } = require('electron');
+    const statusText = document.getElementById('statusText');
+    const progressBar = document.getElementById('progressBar');
+
+    // 0~100% 범위의 상태값에 맞춰 프로그레스 바를 제어합니다.
+    function setProgress(percent) {
+      progressBar.style.width = percent + '%';
+    }
+
+    ipcRenderer.on('update-status', (event, status, data) => {
+      switch (status) {
+        case 'checking':
+          statusText.textContent = data.message || '업데이트 확인 중...';
+          setProgress(15);
+          break;
+        case 'available':
+          statusText.textContent = data.message || '새 업데이트 다운로드 준비 중...';
+          setProgress(30);
+          break;
+        case 'downloading':
+          const percent = data.percent || 0;
+          statusText.textContent = data.message || `업데이트 다운로드 중... (${percent.toFixed(1)}%)`;
+          // 다운로드 진행률을 30% ~ 90% 사이의 바 길이로 매핑하여 표시
+          setProgress(30 + (percent * 0.6));
+          break;
+        case 'downloaded':
+          statusText.textContent = data.message || '다운로드 완료. 프로그램 업데이트 설치 중...';
+          setProgress(100);
+          break;
+        case 'not-available':
+          statusText.textContent = data.message || '최신 버전입니다. 프로그램을 실행합니다...';
+          setProgress(100);
+          break;
+        case 'error':
+          statusText.textContent = data.message || '최신 버전 정보를 읽을 수 없습니다. 실행합니다...';
+          setProgress(100);
+          break;
+        case 'starting':
+          statusText.textContent = data.message || '재고 관리 화면을 불러오는 중...';
+          setProgress(100);
+          break;
+      }
+    });
+  </script>
+</body>
+</html>
