@@ -32,7 +32,7 @@
         <!-- 알림 팝오버 (드롭다운 탭) -->
         <div id="notificationPopover" style="display: none; position: absolute; right: 0; top: 32px; width: 440px; background: var(--bg-card); border: 1px solid var(--color-border); border-radius: var(--radius-md); box-shadow: 0 4px 16px rgba(0,0,0,0.15); z-index: 1000; padding: 14px;">
           <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; border-bottom: 1px solid var(--color-border); padding-bottom: 8px;">
-            <span style="font-weight: bold; font-size: 13px; color: var(--color-text-main);"><span class="sf-icon sf-icon-bell"></span> 알림 목록</span>
+            <span style="font-weight: bold; font-size: 13px; color: var(--color-text-main); display: inline-flex; align-items: center; gap: 6px;"><span class="sf-icon sf-icon-bell"></span> 알림 목록</span>
             <button class="btn" id="btnNotificationClose" style="padding: 3px 8px; font-size: 11px; border: 1px solid var(--color-border);">닫기</button>
           </div>
           <div id="notificationEmptyState" class="empty-state" style="padding: 30px 0; text-align: center; color: var(--color-text-muted); font-size: 12px; display: none;">
@@ -131,7 +131,7 @@
               
               <!-- 약재 상세 메모란 -->
               <div class="memo-container" style="margin-top: 15px; border-top: 1px solid var(--color-border); padding-top: 15px; display: flex; flex-direction: column; gap: 5px;">
-                <div style="font-weight: 600; font-size: 13px; color: var(--color-text-main);"><span class="sf-icon sf-icon-memo"></span> 약재 메모</div>
+                <div style="font-weight: 600; font-size: 13px; color: var(--color-text-main); display: flex; align-items: center; gap: 6px;"><span class="sf-icon sf-icon-memo"></span> 약재 메모</div>
                 <textarea id="detMemo" placeholder="여기에 약재 관련 보관 위치, 보관 방법, 주의사항 등의 메모를 입력하세요. 입력 시 자동으로 저장됩니다."></textarea>
               </div>
             </div>
@@ -589,7 +589,7 @@
           </tr>
         </table>
         
-        <div style="font-size:12px; font-weight:700; color:var(--color-text-muted); margin-bottom: 6px;"><span class="sf-icon sf-icon-clipboard"></span> 조제 약재 목록</div>
+        <div style="font-size:12px; font-weight:700; color:var(--color-text-muted); margin-bottom: 6px; display: flex; align-items: center; gap: 6px;"><span class="sf-icon sf-icon-clipboard"></span> 조제 약재 목록</div>
         <div class="log-table-wrapper" style="max-height: 180px; margin-bottom: 16px;">
           <table class="presc-table">
             <thead>
@@ -711,7 +711,7 @@
           </tr>
         </table>
         
-        <div style="font-size:12px; font-weight:700; color:var(--color-text-muted); margin-bottom: 6px;"><span class="sf-icon sf-icon-clipboard"></span> 구성 약재 목록</div>
+        <div style="font-size:12px; font-weight:700; color:var(--color-text-muted); margin-bottom: 6px; display: flex; align-items: center; gap: 6px;"><span class="sf-icon sf-icon-clipboard"></span> 구성 약재 목록</div>
         <div class="log-table-wrapper" style="max-height: 180px; margin-bottom: 16px;">
           <table class="presc-table">
             <thead>

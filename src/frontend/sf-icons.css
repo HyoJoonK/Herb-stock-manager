@@ -9,7 +9,9 @@
   width: 1.1em;
   height: 1.1em;
   background-color: currentColor;
-  vertical-align: -0.15em;
+  vertical-align: -0.12em;
+  position: relative;
+  top: -0.05em;
   mask-repeat: no-repeat;
   mask-position: center;
   mask-size: contain;

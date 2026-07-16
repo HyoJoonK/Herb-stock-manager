@@ -99,6 +99,9 @@ body {
 }
 
 .tab-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   padding: 10px 18px;
   border: 1px solid transparent;
   background: none;
@@ -354,6 +357,9 @@ body {
   font-size: 14px;
   font-weight: 800;
   color: var(--color-primary);
+  display: flex;
+  align-items: center;
+  gap: 6px;
 }
 
 .card-content {
@@ -496,6 +502,9 @@ body {
   font-weight: 700;
   color: var(--color-text-muted);
   margin-bottom: 8px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
 }
 
 /* 로그 테이블 */
@@ -743,6 +752,9 @@ body {
   margin-bottom: 20px; /* 필드들과 여유 공간 확보 */
   border-bottom: 2px solid var(--bg-primary);
   padding-bottom: 10px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
 }
 
 .modal-form .input-group {
@@ -779,6 +791,9 @@ body {
   color: var(--color-text-main);
   cursor: pointer;
   transition: var(--transition-fast);
+  display: flex;
+  align-items: center;
+  gap: 6px;
 }
 
 .context-menu-item:hover {
@@ -824,6 +839,9 @@ body {
   border-radius: calc(var(--radius-md) - 2px);
   cursor: pointer;
   transition: all var(--transition-fast);
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
 }
 
 .switcher-btn:hover {
