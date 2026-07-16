@@ -58,6 +58,8 @@ class InventoryManager {
           opened_pack_remain REAL NOT NULL DEFAULT 0,
           safety_stock REAL NOT NULL DEFAULT 0,
           unit TEXT NOT NULL DEFAULT 'g',
+          memo TEXT,
+          is_presence_only INTEGER NOT NULL DEFAULT 0,
           updated_at TEXT NOT NULL DEFAULT (datetime('now')),
           CHECK(pack_size > 0),
           CHECK(unopened_packs >= 0),
@@ -74,17 +76,48 @@ class InventoryManager {
           patient_name TEXT NOT NULL,
           total_items INTEGER NOT NULL,
           note TEXT,
+          is_deducted INTEGER NOT NULL DEFAULT 1,
           created_at TEXT NOT NULL DEFAULT (datetime('now')),
           updated_at TEXT NOT NULL DEFAULT (datetime('now'))
         )
       `).run();
 
-      // 만약 기존 테이블이 존재하여 note 컬럼이 없는 경우를 위한 안전장치 마이그레이션 실행
+      // 만약 기존 테이블이 존재하여 note, is_deducted 컬럼이 없는 경우를 위한 안전장치 마이그레이션 실행
       try {
         this.db.prepare('ALTER TABLE prescriptions ADD COLUMN note TEXT').run();
       } catch (e) {
         // 이미 note 컬럼이 존재할 시 무시
       }
+
+      try {
+        this.db.prepare('ALTER TABLE prescriptions ADD COLUMN is_deducted INTEGER NOT NULL DEFAULT 1').run();
+      } catch (e) {
+        // 이미 is_deducted 컬럼이 존재할 시 무시
+      }
+
+      try {
+        this.db.prepare('ALTER TABLE medicines ADD COLUMN memo TEXT').run();
+      } catch (e) {
+        // 이미 memo 컬럼이 존재할 시 무시
+      }
+
+      try {
+        this.db.prepare('ALTER TABLE medicines ADD COLUMN is_presence_only INTEGER NOT NULL DEFAULT 0').run();
+      } catch (e) {
+        // 이미 is_presence_only 컬럼이 존재할 시 무시
+      }
+
+      this.db.prepare(`
+        CREATE TABLE IF NOT EXISTS notifications (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          medicine_id INTEGER NOT NULL,
+          medicine_name TEXT NOT NULL,
+          message TEXT NOT NULL,
+          is_read INTEGER DEFAULT 0,
+          created_at TEXT NOT NULL DEFAULT (datetime('now')),
+          FOREIGN KEY(medicine_id) REFERENCES medicines(id) ON DELETE CASCADE
+        )
+      `).run();
 
       this.db.prepare(`
         CREATE TABLE IF NOT EXISTS stock_logs (
@@ -356,8 +389,8 @@ class InventoryManager {
           if (this.shouldOverwriteWithRemote('medicines', newRow.id, newRow.updated_at)) {
             const sqliteTime = this.formatToSqliteTime(newRow.updated_at);
             this.db.prepare(`
-              INSERT INTO medicines (id, name, category_id, pack_size, unopened_packs, opened_pack_remain, safety_stock, unit, updated_at)
-              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+              INSERT INTO medicines (id, name, category_id, pack_size, unopened_packs, opened_pack_remain, safety_stock, unit, memo, is_presence_only, updated_at)
+              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
               ON CONFLICT(id) DO UPDATE SET
                 name=excluded.name,
                 category_id=excluded.category_id,
@@ -366,24 +399,27 @@ class InventoryManager {
                 opened_pack_remain=excluded.opened_pack_remain,
                 safety_stock=excluded.safety_stock,
                 unit=excluded.unit,
+                memo=excluded.memo,
+                is_presence_only=excluded.is_presence_only,
                 updated_at=excluded.updated_at
-            `).run(newRow.id, newRow.name, newRow.category_id, newRow.pack_size, newRow.unopened_packs, newRow.opened_pack_remain, newRow.safety_stock, newRow.unit, sqliteTime);
+            `).run(newRow.id, newRow.name, newRow.category_id, newRow.pack_size, newRow.unopened_packs, newRow.opened_pack_remain, newRow.safety_stock, newRow.unit, newRow.memo, newRow.is_presence_only, sqliteTime);
           }
         } else if (table === 'prescriptions') {
           if (this.shouldOverwriteWithRemote('prescriptions', newRow.id, newRow.updated_at)) {
             const cTime = this.formatToSqliteTime(newRow.created_at);
             const uTime = this.formatToSqliteTime(newRow.updated_at);
             this.db.prepare(`
-              INSERT INTO prescriptions (id, prescription_name, patient_name, total_items, note, created_at, updated_at)
-              VALUES (?, ?, ?, ?, ?, ?, ?)
+              INSERT INTO prescriptions (id, prescription_name, patient_name, total_items, note, is_deducted, created_at, updated_at)
+              VALUES (?, ?, ?, ?, ?, ?, ?, ?)
               ON CONFLICT(id) DO UPDATE SET
                 prescription_name=excluded.prescription_name,
                 patient_name=excluded.patient_name,
                 total_items=excluded.total_items,
                 note=excluded.note,
+                is_deducted=excluded.is_deducted,
                 created_at=excluded.created_at,
                 updated_at=excluded.updated_at
-            `).run(newRow.id, newRow.prescription_name, newRow.patient_name, newRow.total_items, newRow.note, cTime, uTime);
+            `).run(newRow.id, newRow.prescription_name, newRow.patient_name, newRow.total_items, newRow.note, newRow.is_deducted, cTime, uTime);
           }
         } else if (table === 'prescription_items') {
           this.db.prepare(`
@@ -659,6 +695,8 @@ class InventoryManager {
             opened_pack_remain: lm.opened_pack_remain,
             safety_stock: lm.safety_stock,
             unit: lm.unit,
+            memo: lm.memo,
+            is_presence_only: lm.is_presence_only,
             updated_at: this.parseSqliteTime(lm.updated_at)
           });
         }
@@ -682,8 +720,8 @@ class InventoryManager {
       if (medsToLocal.length > 0) {
         const transaction = this.db.transaction(() => {
           const stmt = this.db.prepare(`
-            INSERT INTO medicines (id, name, category_id, pack_size, unopened_packs, opened_pack_remain, safety_stock, unit, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO medicines (id, name, category_id, pack_size, unopened_packs, opened_pack_remain, safety_stock, unit, memo, is_presence_only, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(id) DO UPDATE SET
               name=excluded.name,
               category_id=excluded.category_id,
@@ -692,11 +730,13 @@ class InventoryManager {
               opened_pack_remain=excluded.opened_pack_remain,
               safety_stock=excluded.safety_stock,
               unit=excluded.unit,
+              memo=excluded.memo,
+              is_presence_only=excluded.is_presence_only,
               updated_at=excluded.updated_at
           `);
           for (const rm of medsToLocal) {
             const sqliteTime = this.formatToSqliteTime(rm.updated_at);
-            stmt.run(rm.id, rm.name, rm.category_id, rm.pack_size, rm.unopened_packs, rm.opened_pack_remain, rm.safety_stock, rm.unit, sqliteTime);
+            stmt.run(rm.id, rm.name, rm.category_id, rm.pack_size, rm.unopened_packs, rm.opened_pack_remain, rm.safety_stock, rm.unit, rm.memo, rm.is_presence_only, sqliteTime);
           }
         });
         transaction();
@@ -723,6 +763,7 @@ class InventoryManager {
             patient_name: lp.patient_name,
             total_items: lp.total_items,
             note: lp.note,
+            is_deducted: lp.is_deducted,
             created_at: this.parseSqliteTime(lp.created_at),
             updated_at: this.parseSqliteTime(lp.updated_at)
           });
@@ -757,20 +798,21 @@ class InventoryManager {
       if (prescsToLocal.length > 0) {
         const transaction = this.db.transaction(() => {
           const stmt = this.db.prepare(`
-            INSERT INTO prescriptions (id, prescription_name, patient_name, total_items, note, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO prescriptions (id, prescription_name, patient_name, total_items, note, is_deducted, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(id) DO UPDATE SET
               prescription_name=excluded.prescription_name,
               patient_name=excluded.patient_name,
               total_items=excluded.total_items,
               note=excluded.note,
+              is_deducted=excluded.is_deducted,
               created_at=excluded.created_at,
               updated_at=excluded.updated_at
           `);
           for (const rp of prescsToLocal) {
             const cTime = this.formatToSqliteTime(rp.created_at);
             const uTime = this.formatToSqliteTime(rp.updated_at);
-            stmt.run(rp.id, rp.prescription_name, rp.patient_name, rp.total_items, rp.note, cTime, uTime);
+            stmt.run(rp.id, rp.prescription_name, rp.patient_name, rp.total_items, rp.note, rp.is_deducted, cTime, uTime);
           }
         });
         transaction();
@@ -988,9 +1030,18 @@ class InventoryManager {
    * @param {object} med 약재 객체
    */
   calculateStockInfo(med) {
-    const { unopened_packs, pack_size, opened_pack_remain, unit } = med;
-    const totalStock = (unopened_packs * pack_size) + opened_pack_remain;
+    const { unopened_packs, pack_size, opened_pack_remain, unit, is_presence_only } = med;
     
+    if (is_presence_only === 1) {
+      const totalStock = unopened_packs > 0 ? pack_size : 0;
+      const formatted = unopened_packs > 0 ? '재고 있음' : '재고 없음';
+      return {
+        totalStock,
+        formatted
+      };
+    }
+
+    const totalStock = (unopened_packs * pack_size) + opened_pack_remain;
     const comma = (num) => Math.round(num * 100) / 100;
 
     let formatted = `총 ${comma(totalStock)}${unit}`;
@@ -1032,12 +1083,14 @@ class InventoryManager {
       category_id: med.category_id,
       categoryName: med.category_name || '미분류',
       safety_stock: med.safety_stock,
-      aliases
+      aliases,
+      memo: med.memo,
+      is_presence_only: med.is_presence_only
     };
   }
 
   addMedicine(data) {
-    const { name, category_id, pack_size, unopened_packs, opened_pack_remain, safety_stock, unit, aliases } = data;
+    const { name, category_id, pack_size, unopened_packs, opened_pack_remain, safety_stock, unit, aliases, memo, is_presence_only } = data;
     if (!name || !pack_size || pack_size <= 0) {
       throw new Error('약재명과 유효한 팩 규격은 필수입니다.');
     }
@@ -1068,8 +1121,8 @@ class InventoryManager {
 
     const transaction = this.db.transaction(() => {
       const stmt = this.db.prepare(`
-        INSERT INTO medicines (name, category_id, pack_size, unopened_packs, opened_pack_remain, safety_stock, unit, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO medicines (name, category_id, pack_size, unopened_packs, opened_pack_remain, safety_stock, unit, memo, is_presence_only, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `);
       const result = stmt.run(
         name,
@@ -1079,6 +1132,8 @@ class InventoryManager {
         Number(opened_pack_remain || 0),
         Number(safety_stock || 0),
         unit || 'g',
+        memo || null,
+        Number(is_presence_only || 0),
         this.getAdjustedSqliteTime()
       );
       newId = result.lastInsertRowid;
@@ -1100,10 +1155,14 @@ class InventoryManager {
     try {
       transaction();
       
-      this.syncItemToSupabase('medicines', newId).catch(err => console.error('[Supabase Sync Error] medicines:', err));
-      for (const aliasId of insertedAliasIds) {
-        this.syncItemToSupabase('medicine_aliases', aliasId).catch(err => console.error('[Supabase Sync Error] medicine_aliases:', err));
-      }
+      // medicines 업로드가 완료된 후 외래 키 참조 관계에 있는 medicine_aliases를 동기화하여 에러를 방지합니다.
+      this.syncItemToSupabase('medicines', newId)
+        .then(() => {
+          for (const aliasId of insertedAliasIds) {
+            this.syncItemToSupabase('medicine_aliases', aliasId).catch(err => console.error('[Supabase Sync Error] medicine_aliases:', err));
+          }
+        })
+        .catch(err => console.error('[Supabase Sync Error] medicines:', err));
 
       return newId;
     } catch (err) {
@@ -1127,12 +1186,17 @@ class InventoryManager {
       const opened_pack_remain = updateData.opened_pack_remain !== undefined ? Number(updateData.opened_pack_remain) : med.opened_pack_remain;
       const safety_stock = updateData.safety_stock !== undefined ? Number(updateData.safety_stock) : med.safety_stock;
       const unit = updateData.unit !== undefined ? updateData.unit : med.unit;
+      const memo = updateData.memo !== undefined ? updateData.memo : med.memo;
+      const is_presence_only = updateData.is_presence_only !== undefined ? Number(updateData.is_presence_only) : med.is_presence_only;
 
       if (pack_size <= 0) throw new Error('팩 규격은 0보다 커야 합니다.');
       if (opened_pack_remain > pack_size) throw new Error('개봉 잔량은 팩 규격을 초과할 수 없습니다.');
 
-      const newTotal = (unopened_packs * pack_size) + opened_pack_remain;
-      const loss = newTotal - oldTotal;
+      // 단순 유무 관리 약재는 재고 오차(loss)를 계산하지 않습니다 (오차 로그가 불필요하므로).
+      let loss = 0;
+      if (is_presence_only === 0 && med.is_presence_only === 0) {
+        loss = ((unopened_packs - med.unopened_packs) * pack_size) + (opened_pack_remain - med.opened_pack_remain);
+      }
 
       return {
         name,
@@ -1142,6 +1206,8 @@ class InventoryManager {
         opened_pack_remain,
         safety_stock,
         unit,
+        memo,
+        is_presence_only,
         loss
       };
     };
@@ -1160,7 +1226,7 @@ class InventoryManager {
 
       this.db.prepare(`
         UPDATE medicines 
-        SET name = ?, category_id = ?, pack_size = ?, unopened_packs = ?, opened_pack_remain = ?, safety_stock = ?, unit = ?, updated_at = ?
+        SET name = ?, category_id = ?, pack_size = ?, unopened_packs = ?, opened_pack_remain = ?, safety_stock = ?, unit = ?, memo = ?, is_presence_only = ?, updated_at = ?
         WHERE id = ?
       `).run(
         updated.name,
@@ -1170,6 +1236,8 @@ class InventoryManager {
         updated.opened_pack_remain,
         updated.safety_stock,
         updated.unit,
+        updated.memo,
+        updated.is_presence_only,
         this.getAdjustedSqliteTime(),
         medId
       );
@@ -1226,16 +1294,20 @@ class InventoryManager {
     try {
       transaction();
 
-      this.syncItemToSupabase('medicines', medId).catch(err => console.error('[Supabase Sync Error] medicines:', err));
-      if (insertedLogId > 0) {
-        this.syncItemToSupabase('stock_logs', insertedLogId).catch(err => console.error('[Supabase Sync Error] stock_logs:', err));
-      }
+      // medicines 업로드가 완료된 후 외래 키 참조 관계에 있는 stock_logs와 medicine_aliases를 동기화하여 에러를 방지합니다.
+      this.syncItemToSupabase('medicines', medId)
+        .then(() => {
+          if (insertedLogId > 0) {
+            this.syncItemToSupabase('stock_logs', insertedLogId).catch(err => console.error('[Supabase Sync Error] stock_logs:', err));
+          }
+          for (const id of insertedAliasIds) {
+            this.syncItemToSupabase('medicine_aliases', id).catch(err => console.error('[Supabase Sync Error] medicine_aliases:', err));
+          }
+        })
+        .catch(err => console.error('[Supabase Sync Error] medicines:', err));
 
       for (const id of deletedAliasIds) {
         this.syncDeletedToSupabase('medicine_aliases', id).catch(err => console.error('[Supabase Sync Error] delete medicine_aliases:', err));
-      }
-      for (const id of insertedAliasIds) {
-        this.syncItemToSupabase('medicine_aliases', id).catch(err => console.error('[Supabase Sync Error] medicine_aliases:', err));
       }
 
       return loss;
@@ -1299,8 +1371,11 @@ class InventoryManager {
 
       this.db.transaction(() => {
         for (const item of items) {
-          const med = this.db.prepare('SELECT unopened_packs, opened_pack_remain, pack_size FROM medicines WHERE id = ?').get(item.medicine_id);
+          const med = this.db.prepare('SELECT unopened_packs, opened_pack_remain, pack_size, is_presence_only FROM medicines WHERE id = ?').get(item.medicine_id);
           if (med) {
+            if (med.is_presence_only === 1) {
+              continue; // 단순 유무 관리 약재는 롤백하지 않음
+            }
             let newRemain = med.opened_pack_remain + item.amount;
             let newPacks = med.unopened_packs;
             if (newRemain >= med.pack_size) {
@@ -1367,32 +1442,38 @@ class InventoryManager {
   /**
    * 처방 정보 및 포함 약재 목록/수량 전면 수정 (재고 복원 및 재소모)
    */
-  updatePrescriptionWithItems(prescriptionId, prescriptionName, patientName, items, note = '') {
+  updatePrescriptionWithItems(prescriptionId, prescriptionName, patientName, items, note = '', isDeducted = true) {
     const pId = Number(prescriptionId);
     if (!items || items.length === 0) {
       throw new Error('처방전에 약재가 포함되어야 합니다.');
     }
 
     try {
+      const presc = this.db.prepare('SELECT is_deducted FROM prescriptions WHERE id = ?').get(pId);
+      const wasDeducted = presc ? presc.is_deducted === 1 : false;
+
       const oldItems = this.db.prepare('SELECT id, medicine_id, amount FROM prescription_items WHERE prescription_id = ?').all(pId);
       const oldLogs = this.db.prepare('SELECT id FROM stock_logs WHERE prescription_id = ?').all(pId);
 
       const newLogIdsToSync = [];
+      const deductedVal = isDeducted ? 1 : 0;
 
       this.db.transaction(() => {
-        // 기존 재고 복원
-        for (const oldItem of oldItems) {
-          const med = this.db.prepare('SELECT unopened_packs, opened_pack_remain, pack_size FROM medicines WHERE id = ?').get(oldItem.medicine_id);
-          if (med) {
-            let newRemain = med.opened_pack_remain + oldItem.amount;
-            let newPacks = med.unopened_packs;
-            if (newRemain >= med.pack_size) {
-              const extraPacks = Math.floor(newRemain / med.pack_size);
-              newPacks += extraPacks;
-              newRemain = newRemain % med.pack_size;
+        // 기존에 차감되었던 처방전인 경우에만 기존 재고 복원 수행
+        if (wasDeducted) {
+          for (const oldItem of oldItems) {
+            const med = this.db.prepare('SELECT unopened_packs, opened_pack_remain, pack_size FROM medicines WHERE id = ?').get(oldItem.medicine_id);
+            if (med) {
+              let newRemain = med.opened_pack_remain + oldItem.amount;
+              let newPacks = med.unopened_packs;
+              if (newRemain >= med.pack_size) {
+                const extraPacks = Math.floor(newRemain / med.pack_size);
+                newPacks += extraPacks;
+                newRemain = newRemain % med.pack_size;
+              }
+              this.db.prepare('UPDATE medicines SET unopened_packs = ?, opened_pack_remain = ?, updated_at = ? WHERE id = ?')
+                .run(newPacks, newRemain, this.getAdjustedSqliteTime(), oldItem.medicine_id);
             }
-            this.db.prepare('UPDATE medicines SET unopened_packs = ?, opened_pack_remain = ?, updated_at = ? WHERE id = ?')
-              .run(newPacks, newRemain, this.getAdjustedSqliteTime(), oldItem.medicine_id);
           }
         }
 
@@ -1411,9 +1492,9 @@ class InventoryManager {
         // 처방 테이블 정보 갱신
         this.db.prepare(`
           UPDATE prescriptions 
-          SET prescription_name = ?, patient_name = ?, total_items = ?, note = ?, updated_at = ?
+          SET prescription_name = ?, patient_name = ?, total_items = ?, note = ?, is_deducted = ?, updated_at = ?
           WHERE id = ?
-        `).run(prescriptionName, patientName, items.length, note, this.getAdjustedSqliteTime(), pId);
+        `).run(prescriptionName, patientName, items.length, note, deductedVal, this.getAdjustedSqliteTime(), pId);
 
         // 새 항목 삽입 및 재소모
         const itemStmt = this.db.prepare(`
@@ -1423,10 +1504,11 @@ class InventoryManager {
 
         for (const item of items) {
           itemStmt.run(pId, item.medicineId, item.amount);
-          const logId = this.consumeStockLocally(item.medicineId, item.amount, pId, `${prescriptionName} 처방 (${patientName})`);
-          
-          if (logId > 0) {
-            newLogIdsToSync.push(logId);
+          if (isDeducted) {
+            const logId = this.consumeStockLocally(item.medicineId, item.amount, pId, `${prescriptionName} 처방 (${patientName})`);
+            if (logId > 0) {
+              newLogIdsToSync.push(logId);
+            }
           }
         }
       })();
@@ -1489,6 +1571,15 @@ class InventoryManager {
     const med = this.db.prepare('SELECT * FROM medicines WHERE id = ?').get(medicineId);
     if (!med) throw new Error('약재를 찾을 수 없습니다.');
 
+    // 단순 유무 관리 약재는 처방 시 실제 재고를 차감하지는 않으나, 처방 내역 자체는 변동량 0으로 기록합니다.
+    if (med.is_presence_only === 1) {
+      const resLog = this.db.prepare(`
+        INSERT INTO stock_logs (medicine_id, type, quantity, timestamp, prescription_id, note)
+        VALUES (?, 'CONSUME', 0, ?, ?, ?)
+      `).run(medicineId, this.getAdjustedSqliteTime(), prescriptionId, note || '처방 소모');
+      return resLog.lastInsertRowid;
+    }
+
     const { unopened_packs, pack_size, opened_pack_remain } = med;
     const totalStock = (unopened_packs * pack_size) + opened_pack_remain;
 
@@ -1515,6 +1606,21 @@ class InventoryManager {
       currentUnopened -= packsToOpen;
       currentRemain = (packsToOpen * pack_size) - needed;
       needed = 0;
+
+      // 새 팩 개봉 알림 적재
+      try {
+        this.db.prepare(`
+          INSERT INTO notifications (medicine_id, medicine_name, message, is_read, created_at)
+          VALUES (?, ?, ?, 0, ?)
+        `).run(
+          medicineId,
+          med.name,
+          `${med.name} 약재의 개봉 잔량을 다 사용하고 새 팩(${packsToOpen}개)을 개봉했습니다. 새 팩을 뜯으셨다면 실제 잔량을 다시 한번 기록(보정)해보세요.`,
+          this.getAdjustedSqliteTime()
+        );
+      } catch (err) {
+        console.error('[Notification Insert Error]', err);
+      }
     }
 
     this.db.prepare(`
@@ -1592,21 +1698,22 @@ class InventoryManager {
     this.syncItemToSupabase('medicines', medicineId).catch(err => console.error('[Supabase Sync Error] medicines:', err));
   }
 
-  addPrescription(prescriptionName, patientName, items, note = '') {
+  addPrescription(prescriptionName, patientName, items, note = '', isDeducted = true) {
     if (!items || items.length === 0) {
       throw new Error('처방전에 약재가 포함되어야 합니다.');
     }
 
     let pId = 0;
     const logIdsToSync = [];
+    const deductedVal = isDeducted ? 1 : 0;
 
     const transaction = this.db.transaction(() => {
       const nowTime = this.getAdjustedSqliteTime();
       const stmt = this.db.prepare(`
-        INSERT INTO prescriptions (prescription_name, patient_name, total_items, note, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?)
+        INSERT INTO prescriptions (prescription_name, patient_name, total_items, note, is_deducted, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
       `);
-      const res = stmt.run(prescriptionName, patientName, items.length, note, nowTime, nowTime);
+      const res = stmt.run(prescriptionName, patientName, items.length, note, deductedVal, nowTime, nowTime);
       pId = res.lastInsertRowid;
 
       const itemStmt = this.db.prepare(`
@@ -1616,10 +1723,11 @@ class InventoryManager {
 
       for (const item of items) {
         itemStmt.run(pId, item.medicineId, item.amount);
-        const logId = this.consumeStockLocally(item.medicineId, item.amount, pId, `${prescriptionName} 처방 (${patientName})`);
-        
-        if (logId > 0) {
-          logIdsToSync.push(logId);
+        if (isDeducted) {
+          const logId = this.consumeStockLocally(item.medicineId, item.amount, pId, `${prescriptionName} 처방 (${patientName})`);
+          if (logId > 0) {
+            logIdsToSync.push(logId);
+          }
         }
       }
     });
@@ -1730,6 +1838,74 @@ class InventoryManager {
          OR m.name LIKE ?
       ORDER BY p.created_at DESC, p.id DESC
     `).all(likeQuery, likeQuery, likeQuery);
+  }
+
+  deductPrescriptionStock(prescriptionId) {
+    const pId = Number(prescriptionId);
+    const presc = this.db.prepare('SELECT * FROM prescriptions WHERE id = ?').get(pId);
+    if (!presc) {
+      throw new Error('해당 처방전을 찾을 수 없습니다.');
+    }
+    if (presc.is_deducted === 1) {
+      throw new Error('이미 재고가 차감된 처방전입니다.');
+    }
+
+    const items = this.db.prepare('SELECT * FROM prescription_items WHERE prescription_id = ?').all(pId);
+    const logIdsToSync = [];
+
+    const transaction = this.db.transaction(() => {
+      this.db.prepare(`
+        UPDATE prescriptions 
+        SET is_deducted = 1, updated_at = ?
+        WHERE id = ?
+      `).run(this.getAdjustedSqliteTime(), pId);
+
+      for (const item of items) {
+        const logId = this.consumeStockLocally(item.medicine_id, item.amount, pId, `${presc.prescription_name} 처방 (${presc.patient_name})`);
+        if (logId > 0) {
+          logIdsToSync.push(logId);
+        }
+      }
+    });
+    transaction();
+
+    // Supabase 동기화
+    if (this.supabase) {
+      this.syncPrescriptionToSupabase(pId)
+        .then(() => {
+          const logPromises = logIdsToSync.map(logId => 
+            this.syncItemToSupabase('stock_logs', logId)
+              .catch(err => console.error('[Supabase Sync Error] stock_logs:', err))
+          );
+          return Promise.all(logPromises);
+        })
+        .then(() => {
+          const medPromises = items.map(item => 
+            this.syncItemToSupabase('medicines', item.medicine_id)
+              .catch(err => console.error('[Supabase Sync Error] medicines:', err))
+          );
+          return Promise.all(medPromises);
+        })
+        .catch(err => {
+          console.error('[Supabase Sync Error] 처방 재고차감 동기화 실패:', err);
+        });
+    }
+
+    return true;
+  }
+
+  getNotifications() {
+    return this.db.prepare('SELECT * FROM notifications ORDER BY created_at DESC, id DESC').all();
+  }
+
+  markNotificationAsRead(id) {
+    this.db.prepare('UPDATE notifications SET is_read = 1 WHERE id = ?').run(id);
+    return true;
+  }
+
+  deleteNotification(id) {
+    this.db.prepare('DELETE FROM notifications WHERE id = ?').run(id);
+    return true;
   }
 }
 

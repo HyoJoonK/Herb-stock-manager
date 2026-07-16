@@ -151,6 +151,7 @@ class QuickSearchEngine {
    * 글로벌 키 입력 인터셉터 및 포커스 상태 기계
    */
   handleKeyDown(e) {
+    if (e.isComposing) return;
     // 모달창(.modal-overlay.show) 또는 팝업(.popup-overlay.show)이 활성화되어 있는 동안에는 키보드 인터셉트 비활성화
     // 단, 소모량 입력 팝업(#quantityPopup) 자체의 입력 제어를 위해 #quantityPopup은 예외로 둡니다.
     const activeModal = document.querySelector('.modal-overlay.show, .popup-overlay.show:not(#quantityPopup)');
@@ -521,11 +522,6 @@ class QuickSearchEngine {
 
     if (newState === 'search' && this.elements.searchInput) {
       this.elements.searchInput.classList.add('keyboard-focused');
-      
-      // 한글 IME composition 버퍼 초기화를 위해 value 재할당
-      const val = this.elements.searchInput.value;
-      this.elements.searchInput.value = '';
-      this.elements.searchInput.value = val;
 
       this.elements.searchInput.focus();
       this.elements.searchInput.select();
@@ -533,9 +529,6 @@ class QuickSearchEngine {
       // 모달 닫힘 등으로 브라우저가 포커스를 바디로 강제 초기화하는 현상을 방어하기 위한 비동기 지연 포커스 안전장치
       setTimeout(() => {
         if (this.state === 'search' && this.elements.searchInput && document.activeElement !== this.elements.searchInput) {
-          const innerVal = this.elements.searchInput.value;
-          this.elements.searchInput.value = '';
-          this.elements.searchInput.value = innerVal;
           this.elements.searchInput.focus();
           this.elements.searchInput.select();
         }

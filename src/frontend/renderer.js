@@ -331,6 +331,7 @@ function inquiryMedicineDetails(medId) {
     document.getElementById('detTotalStock').textContent = info.formatted;
     document.getElementById('detSafetyStock').textContent = `${info.safety_stock}${info.unit}`;
     document.getElementById('detUnit').textContent = info.unit;
+    document.getElementById('detMemo').value = info.memo || '';
 
     detailEmpty.style.display = 'none';
     detailContent.style.display = 'block';
@@ -497,11 +498,18 @@ function renderInquiryLogs(medId) {
     else if (log.type === 'ADJUST') typeBadge = '<span class="status-badge" style="background:#fff3cd; color:#856404;">조정</span>';
     else if (log.type === 'WASTE') typeBadge = '<span class="status-badge status-warning">폐기</span>';
 
-    const qtyFormatted = log.quantity > 0 ? `+${log.quantity}g` : `${log.quantity}g`;
+    let qtyFormatted = '';
+    let colorStyle = 'var(--color-text)';
+    if (log.quantity === 0) {
+      qtyFormatted = '-';
+    } else {
+      qtyFormatted = log.quantity > 0 ? `+${log.quantity}g` : `${log.quantity}g`;
+      colorStyle = log.quantity > 0 ? 'var(--color-primary)' : 'var(--color-accent)';
+    }
 
     tr.innerHTML = `
       <td>${typeBadge}</td>
-      <td style="font-weight:700; color:${log.quantity > 0 ? 'var(--color-primary)' : 'var(--color-accent)'}">${qtyFormatted}</td>
+      <td style="font-weight:700; color:${colorStyle}">${qtyFormatted}</td>
       <td style="color:var(--color-text-muted);">${formatUTCToKSTString(log.timestamp).slice(5, 16)}</td>
       <td style="font-size:11px;">${log.note || ''}</td>
     `;
@@ -574,12 +582,17 @@ function renderPastPrescriptions() {
   list.forEach(p => {
     const tr = document.createElement('tr');
     tr.style.cursor = 'pointer';
+    const statusHtml = p.is_deducted === 1
+      ? '<span style="color:#2ecc71; font-weight:bold;">차감 완료</span>'
+      : '<span style="color:#e67e22; font-weight:bold;">미차감</span>';
+
     tr.innerHTML = `
       <td style="font-weight:600; color:var(--color-text-muted);">#${p.id}</td>
       <td style="font-weight:700; color:var(--color-primary);">${p.prescription_name}</td>
       <td>${p.patient_name}</td>
       <td style="text-align:center;">${p.total_items}종</td>
       <td style="color:var(--color-text-muted); font-size:11px;">${formatUTCToKSTString(p.created_at)}</td>
+      <td style="text-align:center; font-size:11px;">${statusHtml}</td>
     `;
     
     // 행 클릭 시 과거 처방 세부 품목 상세 모달 로드
@@ -591,6 +604,16 @@ function renderPastPrescriptions() {
     tr.addEventListener('contextmenu', (e) => {
       e.preventDefault();
       contextTargetPrescId = p.id;
+      
+      const deductItem = document.getElementById('ctxPrescDeduct');
+      if (deductItem) {
+        if (p.is_deducted === 1) {
+          deductItem.style.display = 'none';
+        } else {
+          deductItem.style.display = 'block';
+        }
+      }
+      
       showContextMenu('prescContextMenu', e.pageX, e.pageY);
     });
 
@@ -611,6 +634,36 @@ function openPrescriptionDetailModal(prescId) {
     document.getElementById('viewPrescDate').textContent = formatUTCToKSTString(detail.created_at);
     document.getElementById('viewPrescNote').textContent = detail.note || '메모 없음';
     
+    const isDeducted = detail.is_deducted === 1;
+    const statusEl = document.getElementById('viewPrescStatus');
+    const deductBtn = document.getElementById('btnDeductPrescriptionDetail');
+
+    if (isDeducted) {
+      statusEl.textContent = '차감 완료';
+      statusEl.style.color = '#2ecc71';
+      deductBtn.style.display = 'none';
+    } else {
+      statusEl.textContent = '미차감';
+      statusEl.style.color = '#e67e22';
+      deductBtn.style.display = 'inline-block';
+      
+      deductBtn.onclick = () => {
+        if (confirm(`"${detail.prescription_name}" 처방의 약재 재고 차감을 실행하시겠습니까?\n이 작업은 되돌릴 수 없으며 중복 실행할 수 없습니다.`)) {
+          try {
+            dbManager.deductPrescriptionStock(prescId);
+            showToast('🎉 재고 차감이 성공적으로 완료되었습니다.');
+            document.getElementById('prescriptionDetailModal').classList.remove('show');
+            renderMedicineList();
+            renderPastPrescriptions();
+            renderPredictView();
+            renderNotifications();
+          } catch (err) {
+            alert(`재고 차감 실패: ${err.message}`);
+          }
+        }
+      };
+    }
+
     const tbody = document.getElementById('viewPrescItemsBody');
     tbody.innerHTML = '';
     
@@ -695,7 +748,8 @@ function addMedToBatch(medId) {
     unopened_packs: med.unopened_packs,
     opened_pack_remain: med.opened_pack_remain,
     safety_stock: med.safety_stock,
-    unit: med.unit
+    unit: med.unit,
+    is_presence_only: med.is_presence_only
   });
 
   renderBatchTable();
@@ -731,6 +785,28 @@ function renderBatchTable() {
       catOptions += `<option value="${c.id}" ${item.category_id == c.id ? 'selected' : ''}>${c.name}</option>`;
     });
 
+    let checkUI = '';
+    if (item.is_presence_only === 1) {
+      const isChecked = item.unopened_packs > 0;
+      checkUI = `
+        <td style="color:var(--color-text-muted); text-align:center;">-</td>
+        <td colspan="2" style="text-align: center; font-weight: bold;">
+          <label style="display:inline-flex; align-items:center; gap:8px; cursor:pointer; font-weight:normal; font-size:11px;">
+            <input type="checkbox" class="batch-presence-checkbox" ${isChecked ? 'checked' : ''} style="transform: scale(1.1); cursor:pointer;">
+            재고 있음
+          </label>
+        </td>
+        <td style="color:var(--color-text-muted); text-align:center;">-</td>
+      `;
+    } else {
+      checkUI = `
+        <td><input type="text" class="batch-pack numeric-input" data-numeric-type="decimal" value="${item.pack_size}"></td>
+        <td><input type="text" class="batch-unopened numeric-input" data-numeric-type="integer" value="${item.unopened_packs}"></td>
+        <td><input type="text" class="batch-remain numeric-input" data-numeric-type="decimal" value="${item.opened_pack_remain}"></td>
+        <td><input type="text" class="batch-safety numeric-input" data-numeric-type="decimal" value="${item.safety_stock}"></td>
+      `;
+    }
+
     tr.innerHTML = `
       <td style="font-weight:700; color:var(--color-primary);">${item.name}</td>
       <td>
@@ -738,11 +814,8 @@ function renderBatchTable() {
           ${catOptions}
         </select>
       </td>
-      <td><input type="text" class="batch-pack numeric-input" data-numeric-type="decimal" value="${item.pack_size}"></td>
-      <td><input type="text" class="batch-unopened numeric-input" data-numeric-type="integer" value="${item.unopened_packs}"></td>
-      <td><input type="text" class="batch-remain numeric-input" data-numeric-type="decimal" value="${item.opened_pack_remain}"></td>
-      <td><input type="text" class="batch-safety numeric-input" data-numeric-type="decimal" value="${item.safety_stock}"></td>
-      <td><input type="text" class="batch-unit" value="${item.unit}" style="width:40px;"></td>
+      ${checkUI}
+      <td><input type="text" class="batch-unit" value="${item.unit}" style="width:40px;" ${item.is_presence_only === 1 ? 'disabled style="background:var(--color-bg-secondary); color:var(--color-text-muted); text-align:center;"' : ''}></td>
       <td>
         <span class="batch-remove-btn" style="cursor:pointer;">❌</span>
       </td>
@@ -765,37 +838,53 @@ function saveBatchChanges() {
   for (const row of rows) {
     const id = parseInt(row.dataset.id);
     const category_id = parseInt(row.querySelector('.batch-cat').value);
-    const pack_size = parseFloat(row.querySelector('.batch-pack').value);
-    const unopened_packs = parseInt(row.querySelector('.batch-unopened').value) || 0;
-    const opened_pack_remain = parseFloat(row.querySelector('.batch-remain').value) || 0;
-    const safety_stock = parseFloat(row.querySelector('.batch-safety').value) || 0;
-    const unit = row.querySelector('.batch-unit').value.trim() || 'g';
+    
+    // 단순 유무 관리 약재 체크박스 조회
+    const checkbox = row.querySelector('.batch-presence-checkbox');
+    const isPresenceOnly = !!checkbox;
 
-    if (isNaN(pack_size) || pack_size <= 0) {
-      alert('팩 규격은 0보다 커야 합니다.');
-      hasError = true;
-      break;
-    }
-    if (opened_pack_remain > pack_size) {
-      alert('개봉 잔량은 팩 규격을 초과할 수 없습니다.');
-      hasError = true;
-      break;
+    let pack_size = 500;
+    let unopened_packs = 0;
+    let opened_pack_remain = 0;
+    let safety_stock = 0;
+    let unit = 'g';
+
+    if (isPresenceOnly) {
+      unopened_packs = checkbox.checked ? 1 : 0;
+    } else {
+      pack_size = parseFloat(row.querySelector('.batch-pack').value);
+      unopened_packs = parseInt(row.querySelector('.batch-unopened').value) || 0;
+      opened_pack_remain = parseFloat(row.querySelector('.batch-remain').value) || 0;
+      safety_stock = parseFloat(row.querySelector('.batch-safety').value) || 0;
+      unit = row.querySelector('.batch-unit').value.trim() || 'g';
+
+      if (isNaN(pack_size) || pack_size <= 0) {
+        alert('팩 규격은 0보다 커야 합니다.');
+        hasError = true;
+        break;
+      }
+      if (opened_pack_remain > pack_size) {
+        alert('개봉 잔량은 팩 규격을 초과할 수 없습니다.');
+        hasError = true;
+        break;
+      }
     }
 
     try {
-      // DB UPDATE 실행 (내부에서 오차 자동 계산하여 ADJUST 로그 적재)
+      // DB UPDATE 실행 (단순 유무 관리 플래그 명시적 전달)
       dbManager.updateMedicine(id, {
         category_id,
         pack_size,
         unopened_packs,
         opened_pack_remain,
         safety_stock,
-        unit
+        unit,
+        is_presence_only: isPresenceOnly ? 1 : 0
       });
       successCount++;
     } catch (err) {
       console.error(err);
-      alert(`저장 중 에러 발생: ${err.message}`);
+      alert(`"${row.cells[0].textContent}" 저장 중 에러 발생: ${err.message}`);
       hasError = true;
       break;
     }
@@ -895,6 +984,10 @@ function openAddMedicineModal() {
   document.getElementById('editMedSafety').value = '500';
   document.getElementById('editMedUnit').value = 'g';
 
+  // 재고 관리 방식 라디오 초기화
+  document.getElementById('editMedTypeWeight').checked = true;
+  toggleMedTypeFields(false);
+
   // 카테고리 셀렉트박스 바인딩
   const select = document.getElementById('editMedCategorySelect');
   select.innerHTML = '';
@@ -927,6 +1020,15 @@ function openEditMedicineModal(medId) {
   document.getElementById('editMedSafety').value = med.safety_stock;
   document.getElementById('editMedUnit').value = med.unit;
 
+  // 재고 관리 방식 라디오 바인딩 및 필드 제어
+  if (med.is_presence_only === 1) {
+    document.getElementById('editMedTypePresence').checked = true;
+    toggleMedTypeFields(true);
+  } else {
+    document.getElementById('editMedTypeWeight').checked = true;
+    toggleMedTypeFields(false);
+  }
+
   const select = document.getElementById('editMedCategorySelect');
   select.innerHTML = '';
   dbManager.getAllCategories().forEach(c => {
@@ -947,23 +1049,35 @@ function handleEditMedSave() {
   const aliasesStr = document.getElementById('editMedAliases').value;
   const aliases = aliasesStr ? aliasesStr.split(',').map(a => a.trim()).filter(Boolean) : [];
   const category_id = parseInt(document.getElementById('editMedCategorySelect').value);
-  const packSize = parseFloat(document.getElementById('editMedPackSize').value);
-  const unopened = parseInt(document.getElementById('editMedUnopened').value) || 0;
-  const remain = parseFloat(document.getElementById('editMedRemain').value) || 0;
-  const safety = parseFloat(document.getElementById('editMedSafety').value) || 0;
-  const unit = document.getElementById('editMedUnit').value.trim() || 'g';
+  
+  const is_presence_only = parseInt(document.querySelector('input[name="editMedCheckType"]:checked').value);
+  let packSize = parseFloat(document.getElementById('editMedPackSize').value);
+  let unopened = parseInt(document.getElementById('editMedUnopened').value) || 0;
+  let remain = parseFloat(document.getElementById('editMedRemain').value) || 0;
+  let safety = parseFloat(document.getElementById('editMedSafety').value) || 0;
+  let unit = document.getElementById('editMedUnit').value.trim() || 'g';
 
   if (!name) {
     alert('약재명을 입력해 주세요.');
     return;
   }
-  if (isNaN(packSize) || packSize <= 0) {
-    alert('팩 규격을 올바르게 입력해 주세요.');
-    return;
-  }
-  if (remain > packSize) {
-    alert(`개봉 잔량(${remain}g)은 팩 규격(${packSize}g)을 초과할 수 없습니다.`);
-    return;
+
+  // 단순 유무 관리인 경우 가상의 값으로 세팅 및 정규화
+  if (is_presence_only === 1) {
+    packSize = 500;
+    unopened = unopened > 0 ? 1 : 0;
+    remain = 0;
+    safety = 0;
+    unit = 'g';
+  } else {
+    if (isNaN(packSize) || packSize <= 0) {
+      alert('팩 규격을 올바르게 입력해 주세요.');
+      return;
+    }
+    if (remain > packSize) {
+      alert(`개봉 잔량(${remain}g)은 팩 규격(${packSize}g)을 초과할 수 없습니다.`);
+      return;
+    }
   }
 
   try {
@@ -977,10 +1091,16 @@ function handleEditMedSave() {
         opened_pack_remain: remain,
         safety_stock: safety,
         unit,
-        aliases
+        aliases,
+        is_presence_only
       });
 
-      showToast(`✏️ "${name}" 약재 데이터 수정 완료 (오차 보정: ${loss > 0 ? '+' : ''}${loss}g)`);
+      if (is_presence_only === 1) {
+        showToast(`✏️ "${name}" 약재 데이터 수정 완료 (단순 유무 관리)`);
+      } else {
+        showToast(`✏️ "${name}" 약재 데이터 수정 완료 (오차 보정: ${loss > 0 ? '+' : ''}${loss}g)`);
+      }
+      
       if (currentInquiryMedId === medId) {
         inquiryMedicineDetails(medId);
       }
@@ -994,7 +1114,8 @@ function handleEditMedSave() {
         opened_pack_remain: remain,
         safety_stock: safety,
         unit,
-        aliases
+        aliases,
+        is_presence_only
       });
       showToast(`✨ 새 약재 "${name}"이(가) 등록되었습니다.`);
     }
@@ -1062,10 +1183,77 @@ function showToast(message, isError = false) {
 }
 
 // ----------------------------------------------------
+/**
+ * 단순 유무 관리 토글 시 모달 내 입력 필드를 제어하는 헬퍼 함수
+ */
+function toggleMedTypeFields(isPresence) {
+  const packSizeEl = document.getElementById('editMedPackSize');
+  const unopenedEl = document.getElementById('editMedUnopened');
+  const remainEl = document.getElementById('editMedRemain');
+  const safetyEl = document.getElementById('editMedSafety');
+  const unitEl = document.getElementById('editMedUnit');
+  const unopenedLabel = unopenedEl.previousElementSibling;
+
+  const packSizeGroup = packSizeEl.closest('.input-group');
+  const remainGroup = remainEl.closest('.input-group');
+  const safetyGroup = safetyEl.closest('.input-group');
+  const unitGroup = unitEl.closest('.input-group');
+
+  if (isPresence) {
+    packSizeEl.value = '500';
+    remainEl.value = '0';
+    safetyEl.value = '0';
+    unitEl.value = 'g';
+    
+    if (packSizeGroup) packSizeGroup.style.display = 'none';
+    if (remainGroup) remainGroup.style.display = 'none';
+    if (safetyGroup) safetyGroup.style.display = 'none';
+    if (unitGroup) unitGroup.style.display = 'none';
+    
+    if (unopenedLabel) {
+      unopenedLabel.textContent = '재고 상태 (1: 있음, 0: 없음)';
+    }
+  } else {
+    if (packSizeGroup) packSizeGroup.style.display = 'flex';
+    if (remainGroup) remainGroup.style.display = 'flex';
+    if (safetyGroup) safetyGroup.style.display = 'flex';
+    if (unitGroup) unitGroup.style.display = 'flex';
+    
+    if (unopenedLabel) {
+      unopenedLabel.textContent = '미개봉 팩(봉지) 수';
+    }
+  }
+}
+
 // DOM 로드 및 이벤트 통합 바인딩
 // ----------------------------------------------------
 document.addEventListener('DOMContentLoaded', () => {
   initDatabase();
+
+  // 약재 상세 메모 자동 저장 리스너 추가
+  const detMemo = document.getElementById('detMemo');
+  if (detMemo) {
+    detMemo.addEventListener('blur', () => {
+      if (currentInquiryMedId) {
+        const val = detMemo.value;
+        try {
+          dbManager.updateMedicine(currentInquiryMedId, { memo: val });
+          showToast('📝 메모가 저장되었습니다.');
+        } catch (err) {
+          console.error('메모 자동 저장 실패:', err);
+          showToast('메모 저장에 실패했습니다.', true);
+        }
+      }
+    });
+  }
+
+  // 약재 관리 방식 라디오 버튼 변경 이벤트 바인딩
+  const radioWeight = document.getElementById('editMedTypeWeight');
+  const radioPresence = document.getElementById('editMedTypePresence');
+  if (radioWeight && radioPresence) {
+    radioWeight.addEventListener('change', () => toggleMedTypeFields(false));
+    radioPresence.addEventListener('change', () => toggleMedTypeFields(true));
+  }
 
   // 처방 바구니 테이블 이벤트 위임 바인딩
   const prescTbody = document.getElementById('prescriptionBody');
@@ -1089,7 +1277,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!isNaN(val) && val > 0) {
           currentPrescriptionItems[index].amount = val;
         }
-        const completeBtn = document.getElementById('btnCompletePrescription');
+        const completeBtn = document.getElementById('btnDeductStock');
         if (completeBtn) completeBtn.click();
       }
     });
@@ -1183,12 +1371,6 @@ document.addEventListener('DOMContentLoaded', () => {
           searchEngine.setFocusState('search');
         }
       });
-      inputEl.addEventListener('blur', () => {
-        // 한글 IME composition 세션을 강제로 안전하게 종료하기 위해 value 재할당
-        const val = inputEl.value;
-        inputEl.value = '';
-        inputEl.value = val;
-      });
     }
   });
 
@@ -1197,12 +1379,6 @@ document.addEventListener('DOMContentLoaded', () => {
   if (pastPrescSearch) {
     pastPrescSearch.addEventListener('input', () => {
       renderPastPrescriptions();
-    });
-    pastPrescSearch.addEventListener('blur', () => {
-      // 한글 IME composition 세션을 강제로 안전하게 종료하기 위해 value 재할당
-      const val = pastPrescSearch.value;
-      pastPrescSearch.value = '';
-      pastPrescSearch.value = val;
     });
   }
 
@@ -1362,12 +1538,23 @@ document.addEventListener('DOMContentLoaded', () => {
       switchTab('prescription');
 
       // 2. 제목 변경 및 강조 스타일링 추가
-      document.getElementById('prescriptionCardTitle').textContent = `📝 조제 수정 및 재고 차감 (처방 #${prescId})`;
+      document.getElementById('prescriptionCardTitle').textContent = `📝 조제 수정 (처방 #${prescId})`;
       document.getElementById('prescriptionCard').classList.add('edit-mode-highlight');
 
-      // 3. 수정 취소 버튼 표시 및 조제 완료 버튼 텍스트 변경
+      // 3. 수정 취소 버튼 표시 및 버튼 텍스트/스타일 변경
       document.getElementById('btnCancelEditPrescription').style.display = 'flex';
-      document.getElementById('btnCompletePrescription').innerHTML = '💾 수정 완료 및 재고 갱신';
+      
+      const saveBtn = document.getElementById('btnSaveOnlyPrescription');
+      saveBtn.className = 'btn btn-secondary';
+      saveBtn.style.flex = '1';
+      saveBtn.innerHTML = '💾 수정 저장';
+      
+      const isAlreadyDeducted = detail.is_deducted === 1;
+      const deductBtn = document.getElementById('btnDeductStock');
+      deductBtn.className = 'btn btn-primary';
+      deductBtn.style.flex = '2';
+      deductBtn.style.display = 'flex';
+      deductBtn.innerHTML = isAlreadyDeducted ? '📦 재고 갱신' : '📦 재고 차감';
 
       // 4. 입력 필드 값 적재
       document.getElementById('prescriptionName').value = detail.prescription_name;
@@ -1399,9 +1586,19 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('prescriptionCardTitle').textContent = '📝 처방전 조제 작성';
     document.getElementById('prescriptionCard').classList.remove('edit-mode-highlight');
 
-    // 2. 취소 버튼 숨기기 및 완료 버튼 텍스트 원복
+    // 2. 취소 버튼 숨기기 및 완료 버튼 텍스트/스타일 원복
     document.getElementById('btnCancelEditPrescription').style.display = 'none';
-    document.getElementById('btnCompletePrescription').innerHTML = '💾 조제 완료 및 재고 차감';
+    
+    const saveBtn = document.getElementById('btnSaveOnlyPrescription');
+    saveBtn.className = 'btn btn-primary';
+    saveBtn.style.flex = '2';
+    saveBtn.innerHTML = '💾 처방 저장';
+    
+    const deductBtn = document.getElementById('btnDeductStock');
+    deductBtn.className = 'btn btn-secondary';
+    deductBtn.style.flex = '1';
+    deductBtn.style.display = 'none';
+    deductBtn.innerHTML = '📦 재고 차감';
 
     // 3. 입력 필드 초기화
     document.getElementById('prescriptionName').value = '';
@@ -1605,6 +1802,30 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   });
 
+  document.getElementById('ctxPrescDeduct').addEventListener('click', () => {
+    if (contextTargetPrescId !== null) {
+      const detail = dbManager.getPrescriptionDetails(contextTargetPrescId);
+      if (detail.is_deducted === 1) {
+        showToast('ℹ️ 이미 재고가 차감된 처방전입니다.');
+        contextTargetPrescId = null;
+        return;
+      }
+      if (confirm(`"${detail.prescription_name}" 처방의 약재 재고 차감을 실행하시겠습니까?\n이 작업은 되돌릴 수 없으며 중복 실행할 수 없습니다.`)) {
+        try {
+          dbManager.deductPrescriptionStock(contextTargetPrescId);
+          showToast('🎉 재고 차감이 성공적으로 완료되었습니다.');
+          renderMedicineList();
+          renderPastPrescriptions();
+          renderPredictView();
+          renderNotifications();
+        } catch (err) {
+          alert(`재고 차감 실패: ${err.message}`);
+        }
+      }
+      contextTargetPrescId = null;
+    }
+  });
+
   document.getElementById('ctxPrescDelete').addEventListener('click', () => {
     if (contextTargetPrescId !== null) {
       const detail = dbManager.getPrescriptionDetails(contextTargetPrescId);
@@ -1697,7 +1918,7 @@ document.addEventListener('DOMContentLoaded', () => {
   // ----------------------------------------------------
   // [처방] 조제 제출 및 수정 완료 처리
   // ----------------------------------------------------
-  document.getElementById('btnCompletePrescription').addEventListener('click', () => {
+  function processPrescriptionSubmit(isDeduct) {
     const prescName = document.getElementById('prescriptionName').value.trim();
     const patName = document.getElementById('patientName').value.trim();
     const prescNote = document.getElementById('prescriptionNote').value.trim();
@@ -1718,12 +1939,20 @@ document.addEventListener('DOMContentLoaded', () => {
       }));
 
       if (isPrescriptionEditMode && currentEditingPrescId !== null) {
-        dbManager.updatePrescriptionWithItems(currentEditingPrescId, prescName, patName, items, prescNote);
-        showToast(`🎉 처방전 #${currentEditingPrescId} 수정 완료 및 실시간 재고 갱신 처리되었습니다.`);
+        dbManager.updatePrescriptionWithItems(currentEditingPrescId, prescName, patName, items, prescNote, isDeduct);
+        if (isDeduct) {
+          showToast(`🎉 처방전 #${currentEditingPrescId} 수정 완료 및 실시간 재고 갱신 처리되었습니다.`);
+        } else {
+          showToast(`🎉 처방전 #${currentEditingPrescId} 수정 완료 및 정보 저장 처리되었습니다. (재고 미차감)`);
+        }
         exitPrescriptionEditMode();
       } else {
-        dbManager.addPrescription(prescName, patName, items, prescNote);
-        showToast(`🎉 "${prescName}" 조제 완료 및 실시간 재고 차감 처리되었습니다.`);
+        dbManager.addPrescription(prescName, patName, items, prescNote, isDeduct);
+        if (isDeduct) {
+          showToast(`🎉 "${prescName}" 조제 완료 및 실시간 재고 차감 처리되었습니다.`);
+        } else {
+          showToast(`🎉 "${prescName}" 처방이 저장되었습니다. (재고 미차감)`);
+        }
       }
 
       currentPrescriptionItems = [];
@@ -1734,10 +1963,19 @@ document.addEventListener('DOMContentLoaded', () => {
       renderMedicineList();
       renderPastPrescriptions();
       renderPredictView(); // 발주 예측도 실시간 업데이트
+      renderNotifications(); // 알림 배지 및 리스트 동적 갱신
     } catch (err) {
       alert(`조제 처리 실패: ${err.message}`);
       showToast('재고 부족 등으로 조제 실패', true);
     }
+  }
+
+  document.getElementById('btnSaveOnlyPrescription').addEventListener('click', () => {
+    processPrescriptionSubmit(false);
+  });
+
+  document.getElementById('btnDeductStock').addEventListener('click', () => {
+    processPrescriptionSubmit(true);
   });
 
   // ----------------------------------------------------
@@ -1847,6 +2085,7 @@ document.addEventListener('DOMContentLoaded', () => {
   // 모달 키보드 편의성 연동 (Esc로 닫기, Tab 키 포커스 가두기, Enter로 저장)
   // ----------------------------------------------------
   document.addEventListener('keydown', (e) => {
+    if (e.isComposing) return;
     // 1. Esc 키로 모든 모달 닫기
     if (e.key === 'Escape') {
       let closedMedModal = false;
@@ -1951,6 +2190,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // 숫자 입력 필드 선두 0 제거기 및 편의성 기능 초기화
   initNumberInputZeroStripper();
+
+  // 알림 시스템 초기화 및 바인딩
+  initNotificationEvents();
+  renderNotifications();
 
   // 초기 로딩 탭 실행
   switchTab('inquiry');
@@ -2097,11 +2340,204 @@ function initNumberInputZeroStripper() {
   // 3. 포커스 시 전체 선택 (기존 0 또는 숫자를 쉽게 덮어쓸 수 있도록 지원)
   document.addEventListener('focus', (e) => {
     if (isNumericInput(e.target)) {
+      const initialVal = e.target.value;
       setTimeout(() => {
-        if (document.activeElement === e.target && e.target.select) {
+        // 사용자가 지연 포커스 전에 이미 타이핑을 시작하여 값이 달라졌다면 선택을 스킵합니다.
+        if (document.activeElement === e.target && e.target.value === initialVal && e.target.select) {
           e.target.select();
         }
       }, 0); // 마우스 클릭 이벤트 완료 후 실행을 위한 0ms 지연
     }
   }, true); // focus 이벤트는 버블링되지 않으므로 캡처링 단계에서 캐치
+}
+
+// ----------------------------------------------------
+// 알림 시스템 제어 및 UI 렌더링
+// ----------------------------------------------------
+function renderNotifications() {
+  const badge = document.getElementById('notificationBadge');
+  const container = document.getElementById('notificationListContainer');
+  const emptyState = document.getElementById('notificationEmptyState');
+  
+  if (!container) return;
+  container.innerHTML = '';
+
+  const list = dbManager.getNotifications();
+  const unreadCount = list.filter(n => n.is_read === 0).length;
+
+  // 배지 수량 갱신
+  if (unreadCount > 0) {
+    badge.textContent = unreadCount;
+    badge.style.display = 'inline-block';
+  } else {
+    badge.style.display = 'none';
+  }
+
+  if (list.length === 0) {
+    emptyState.style.display = 'block';
+    container.style.display = 'none';
+    return;
+  }
+
+  emptyState.style.display = 'none';
+  container.style.display = 'flex';
+
+  list.forEach(n => {
+    const card = document.createElement('div');
+    card.style.display = 'flex';
+    card.style.flexDirection = 'column';
+    card.style.gap = '5px';
+    card.style.padding = '10px';
+    card.style.borderRadius = 'var(--radius-sm)';
+    card.style.border = '1px solid var(--color-border)';
+    
+    if (n.is_read === 0) {
+      card.style.backgroundColor = 'rgba(45, 90, 39, 0.03)';
+      card.style.borderColor = 'rgba(45, 90, 39, 0.15)';
+    } else {
+      card.style.backgroundColor = 'var(--bg-card)';
+    }
+    
+    const timeStr = formatUTCToKSTString(n.created_at);
+
+    // 버튼 구성 (크기 키움)
+    let actionButtons = '';
+    if (n.is_read === 0) {
+      actionButtons += `<button class="btn btn-primary" onclick="openNotificationAdjustModal(event, ${n.id}, ${n.medicine_id}, '${n.medicine_name.replace(/'/g, "\\'")}')" style="font-size: 11px; padding: 4px 10px; height: 26px; display: inline-flex; align-items: center; justify-content: center;">⚖️ 잔량 보정</button>`;
+      actionButtons += `<button class="btn" onclick="readNotification(event, ${n.id})" style="font-size: 11px; padding: 4px 10px; height: 26px; border: 1px solid var(--color-border); background: var(--bg-card); display: inline-flex; align-items: center; justify-content: center;">읽음</button>`;
+    }
+    actionButtons += `<button class="btn" onclick="deleteNotification(event, ${n.id})" style="font-size: 11px; padding: 4px 10px; height: 26px; color: var(--color-accent); border: 1px solid var(--color-border); background: var(--bg-card); display: inline-flex; align-items: center; justify-content: center;">삭제</button>`;
+
+    card.innerHTML = `
+      <div style="display: flex; justify-content: space-between; align-items: center;">
+        <span style="color: var(--color-text-muted); font-size: 10px;">${timeStr}</span>
+        ${n.is_read === 0 ? '<span style="background: var(--color-accent); color: white; border-radius: 4px; padding: 1px 4px; font-size: 9px; font-weight: bold;">NEW</span>' : ''}
+      </div>
+      <div style="font-size: 12.5px; line-height: 1.45; color: var(--color-text-main); font-weight: ${n.is_read === 0 ? '600' : 'normal'}; word-break: keep-all; margin: 2px 0 4px 0;">
+        ${n.message}
+      </div>
+      <div style="display: flex; justify-content: flex-end; gap: 6px; margin-top: 4px;">
+        ${actionButtons}
+      </div>
+    `;
+    container.appendChild(card);
+  });
+}
+
+window.openNotificationAdjustModal = function(e, notiId, medId, medName) {
+  if (e) e.stopPropagation();
+  const modal = document.getElementById('adjustNotificationRemainModal');
+  const med = dbManager.getAllMedicines().find(m => m.id === medId);
+  
+  if (!med) {
+    alert('해당 약재를 찾을 수 없습니다.');
+    return;
+  }
+
+  // 잔량 보정 창이 뜰 때 알림 팝오버 닫기
+  const popover = document.getElementById('notificationPopover');
+  if (popover) popover.style.display = 'none';
+
+  document.getElementById('adjNotificationId').value = notiId;
+  document.getElementById('adjNotificationMedId').value = medId;
+  document.getElementById('adjNotificationMedNameLabel').textContent = `약재명: ${medName} (규격: ${med.pack_size}${med.unit})`;
+  
+  document.getElementById('adjNotificationPacks').value = med.unopened_packs;
+  document.getElementById('adjNotificationRemain').value = med.opened_pack_remain;
+  
+  modal.classList.add('show');
+};
+
+window.readNotification = function(e, notiId) {
+  if (e) e.stopPropagation();
+  try {
+    dbManager.markNotificationAsRead(notiId);
+    renderNotifications();
+  } catch (err) {
+    alert(`알림 업데이트 실패: ${err.message}`);
+  }
+};
+
+window.deleteNotification = function(e, notiId) {
+  if (e) e.stopPropagation();
+  try {
+    dbManager.deleteNotification(notiId);
+    renderNotifications();
+  } catch (err) {
+    alert(`알림 삭제 실패: ${err.message}`);
+  }
+};
+
+function initNotificationEvents() {
+  const btnNoti = document.getElementById('btnNotifications');
+  const popoverNoti = document.getElementById('notificationPopover');
+  const btnCloseNoti = document.getElementById('btnNotificationClose');
+
+  if (btnNoti && popoverNoti) {
+    btnNoti.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const isVisible = popoverNoti.style.display === 'block';
+      if (isVisible) {
+        popoverNoti.style.display = 'none';
+      } else {
+        renderNotifications();
+        popoverNoti.style.display = 'block';
+      }
+    });
+  }
+
+  if (btnCloseNoti && popoverNoti) {
+    btnCloseNoti.addEventListener('click', (e) => {
+      e.stopPropagation();
+      popoverNoti.style.display = 'none';
+    });
+  }
+
+  // 팝오버 외부 클릭 감지하여 닫기
+  document.addEventListener('click', (e) => {
+    if (popoverNoti && popoverNoti.style.display === 'block') {
+      if (!popoverNoti.contains(e.target) && !btnNoti.contains(e.target)) {
+        popoverNoti.style.display = 'none';
+      }
+    }
+  });
+
+  const btnAdjCancel = document.getElementById('btnAdjNotificationCancel');
+  const btnAdjSave = document.getElementById('btnAdjNotificationSave');
+  const modalAdj = document.getElementById('adjustNotificationRemainModal');
+
+  if (btnAdjCancel && modalAdj) {
+    btnAdjCancel.addEventListener('click', () => {
+      modalAdj.classList.remove('show');
+    });
+  }
+
+  if (btnAdjSave && modalAdj) {
+    btnAdjSave.addEventListener('click', () => {
+      const notiId = parseInt(document.getElementById('adjNotificationId').value);
+      const medId = parseInt(document.getElementById('adjNotificationMedId').value);
+      const packs = parseInt(document.getElementById('adjNotificationPacks').value) || 0;
+      const remain = parseFloat(document.getElementById('adjNotificationRemain').value) || 0;
+
+      if (packs < 0 || remain < 0) {
+        alert('팩 개수 및 잔량은 0보다 작을 수 없습니다.');
+        return;
+      }
+
+      try {
+        dbManager.adjustStock(medId, packs, remain);
+        dbManager.markNotificationAsRead(notiId);
+        
+        showToast('⚖️ 약재 잔량이 성공적으로 보정되었습니다.');
+        modalAdj.classList.remove('show');
+        
+        renderNotifications();
+        renderMedicineList();
+        renderPastPrescriptions();
+        renderPredictView();
+      } catch (err) {
+        alert(`잔량 보정 실패: ${err.message}`);
+      }
+    });
+  }
 }
