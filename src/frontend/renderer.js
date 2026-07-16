@@ -220,9 +220,9 @@ function renderMedicineList(categoryFilter = null) {
     if (targetCategory !== '전체' && med.category_id != targetCategory) {
       return false;
     }
-    // 2. 검색어 매칭
+    // 2. 검색어 매칭 (이명까지 포함)
     if (searchQuery) {
-      return searchEngine.match(med.name, searchQuery);
+      return searchEngine.match(med.name, searchQuery, med.aliases);
     }
     return true;
   });
@@ -248,10 +248,11 @@ function renderMedicineList(categoryFilter = null) {
       ? `<span class="status-badge status-warning">재고부족 (안전: ${med.safety_stock}g)</span>`
       : `<span class="status-badge status-normal">적정</span>`;
 
+    const aliasText = med.aliases && med.aliases.length > 0 ? ` <span class="med-aliases" style="font-size:11px; color:var(--color-text-muted); font-weight:normal;">(${med.aliases.join(', ')})</span>` : '';
     item.innerHTML = `
       <div class="med-info">
         <div style="display:flex; align-items:center; gap:8px;">
-          <span class="med-name">${med.name}</span>
+          <span class="med-name">${med.name}${aliasText}</span>
           <span class="status-badge" style="background:#f1f4f2; color:var(--color-text-muted);">${med.category_name}</span>
         </div>
         <div class="med-stock">${med.formatted_stock}</div>
@@ -324,6 +325,7 @@ function inquiryMedicineDetails(medId) {
     const info = dbManager.getTotalStock(medId);
     
     document.getElementById('detName').textContent = info.name;
+    document.getElementById('detAliases').textContent = info.aliases && info.aliases.length > 0 ? info.aliases.join(', ') : '-';
     document.getElementById('detCategory').textContent = info.categoryName;
     document.getElementById('detPackSize').textContent = `${info.pack_size}${info.unit}`;
     document.getElementById('detTotalStock').textContent = info.formatted;
@@ -886,6 +888,7 @@ function openAddMedicineModal() {
   document.getElementById('editMedId').value = '';
   document.getElementById('editMedName').value = '';
   document.getElementById('editMedName').readOnly = false;
+  document.getElementById('editMedAliases').value = '';
   document.getElementById('editMedPackSize').value = '500';
   document.getElementById('editMedUnopened').value = '0';
   document.getElementById('editMedRemain').value = '0';
@@ -917,6 +920,7 @@ function openEditMedicineModal(medId) {
   document.getElementById('editMedId').value = med.id;
   document.getElementById('editMedName').value = med.name;
   document.getElementById('editMedName').readOnly = true; // 약재명은 SQLite UNIQUE 제약 및 오작동 차단을 위해 읽기전용 처리
+  document.getElementById('editMedAliases').value = med.aliases ? med.aliases.join(', ') : '';
   document.getElementById('editMedPackSize').value = med.pack_size;
   document.getElementById('editMedUnopened').value = med.unopened_packs;
   document.getElementById('editMedRemain').value = med.opened_pack_remain;
@@ -940,6 +944,8 @@ function openEditMedicineModal(medId) {
 function handleEditMedSave() {
   const idStr = document.getElementById('editMedId').value;
   const name = document.getElementById('editMedName').value.trim();
+  const aliasesStr = document.getElementById('editMedAliases').value;
+  const aliases = aliasesStr ? aliasesStr.split(',').map(a => a.trim()).filter(Boolean) : [];
   const category_id = parseInt(document.getElementById('editMedCategorySelect').value);
   const packSize = parseFloat(document.getElementById('editMedPackSize').value);
   const unopened = parseInt(document.getElementById('editMedUnopened').value) || 0;
@@ -970,7 +976,8 @@ function handleEditMedSave() {
         unopened_packs: unopened,
         opened_pack_remain: remain,
         safety_stock: safety,
-        unit
+        unit,
+        aliases
       });
 
       showToast(`✏️ "${name}" 약재 데이터 수정 완료 (오차 보정: ${loss > 0 ? '+' : ''}${loss}g)`);
@@ -986,7 +993,8 @@ function handleEditMedSave() {
         unopened_packs: unopened,
         opened_pack_remain: remain,
         safety_stock: safety,
-        unit
+        unit,
+        aliases
       });
       showToast(`✨ 새 약재 "${name}"이(가) 등록되었습니다.`);
     }

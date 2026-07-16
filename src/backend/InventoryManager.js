@@ -111,6 +111,16 @@ class InventoryManager {
         )
       `).run();
 
+      this.db.prepare(`
+        CREATE TABLE IF NOT EXISTS medicine_aliases (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          medicine_id INTEGER NOT NULL,
+          alias TEXT UNIQUE NOT NULL,
+          updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+          FOREIGN KEY(medicine_id) REFERENCES medicines(id) ON DELETE CASCADE
+        )
+      `).run();
+
       const exists = this.db.prepare('SELECT id FROM categories WHERE id = 1').get();
       if (!exists) {
         this.db.prepare("INSERT INTO categories (id, name) VALUES (1, '미분류')").run();
@@ -397,6 +407,18 @@ class InventoryManager {
               prescription_id=excluded.prescription_id,
               note=excluded.note
           `).run(newRow.id, newRow.medicine_id, newRow.type, newRow.quantity, sTime, newRow.prescription_id, newRow.note);
+        } else if (table === 'medicine_aliases') {
+          if (this.shouldOverwriteWithRemote('medicine_aliases', newRow.id, newRow.updated_at)) {
+            const sqliteTime = this.formatToSqliteTime(newRow.updated_at);
+            this.db.prepare(`
+              INSERT INTO medicine_aliases (id, medicine_id, alias, updated_at)
+              VALUES (?, ?, ?, ?)
+              ON CONFLICT(id) DO UPDATE SET
+                medicine_id=excluded.medicine_id,
+                alias=excluded.alias,
+                updated_at=excluded.updated_at
+            `).run(newRow.id, newRow.medicine_id, newRow.alias, sqliteTime);
+          }
         }
       } else if (eventType === 'DELETE') {
         const deletedId = oldRow.id;
@@ -410,6 +432,8 @@ class InventoryManager {
           this.db.prepare('DELETE FROM prescription_items WHERE id = ?').run(deletedId);
         } else if (table === 'stock_logs') {
           this.db.prepare('DELETE FROM stock_logs WHERE id = ?').run(deletedId);
+        } else if (table === 'medicine_aliases') {
+          this.db.prepare('DELETE FROM medicine_aliases WHERE id = ?').run(deletedId);
         }
       }
 
@@ -460,6 +484,8 @@ class InventoryManager {
         data = this.db.prepare('SELECT * FROM prescriptions WHERE id = ?').get(recId);
       } else if (table === 'stock_logs') {
         data = this.db.prepare('SELECT * FROM stock_logs WHERE id = ?').get(recId);
+      } else if (table === 'medicine_aliases') {
+        data = this.db.prepare('SELECT * FROM medicine_aliases WHERE id = ?').get(recId);
       }
 
       if (!data) return;
@@ -540,7 +566,7 @@ class InventoryManager {
           console.warn('[Supabase Sync] 서버 삭제 이력 조회 실패:', errDeleted.message);
         } else if (remoteDeleted && remoteDeleted.length > 0) {
           const transaction = this.db.transaction(() => {
-            const allowedTables = ['categories', 'medicines', 'prescriptions', 'prescription_items', 'stock_logs'];
+            const allowedTables = ['categories', 'medicines', 'prescriptions', 'prescription_items', 'stock_logs', 'medicine_aliases'];
             for (const row of remoteDeleted) {
               if (allowedTables.includes(row.table_name)) {
                 this.db.prepare(`DELETE FROM ${row.table_name} WHERE id = ?`).run(row.record_id);
@@ -821,6 +847,62 @@ class InventoryManager {
         console.log(`[Supabase Sync] stock_logs ${logsToLocal.length}건 다운로드 완료.`);
       }
 
+      // 5.5. medicine_aliases 동기화
+      const localAliases = this.db.prepare('SELECT * FROM medicine_aliases').all();
+      const { data: remoteAliases, error: errAliases } = await this.supabase.from('medicine_aliases').select('*');
+      if (errAliases) throw errAliases;
+
+      const remoteAliasesMap = new Map(remoteAliases.map(a => [a.id, a]));
+
+      const aliasesToRemote = [];
+      for (const la of localAliases) {
+        const ra = remoteAliasesMap.get(la.id);
+        const localTime = new Date(this.parseSqliteTime(la.updated_at)).getTime();
+
+        if (!ra || localTime > new Date(ra.updated_at).getTime()) {
+          aliasesToRemote.push({
+            id: la.id,
+            medicine_id: la.medicine_id,
+            alias: la.alias,
+            updated_at: this.parseSqliteTime(la.updated_at)
+          });
+        }
+      }
+      if (aliasesToRemote.length > 0) {
+        const { error: upsertErr } = await this.supabase.from('medicine_aliases').upsert(aliasesToRemote);
+        if (upsertErr) throw upsertErr;
+        console.log(`[Supabase Sync] medicine_aliases ${aliasesToRemote.length}건 업로드 성공.`);
+      }
+
+      const localAliasesMap = new Map(localAliases.map(a => [a.id, a]));
+      const aliasesToLocal = [];
+      for (const ra of remoteAliases) {
+        const la = localAliasesMap.get(ra.id);
+        const remoteTime = new Date(ra.updated_at).getTime();
+
+        if (!la || remoteTime > new Date(la.updated_at).getTime()) {
+          aliasesToLocal.push(ra);
+        }
+      }
+      if (aliasesToLocal.length > 0) {
+        const transaction = this.db.transaction(() => {
+          const stmt = this.db.prepare(`
+            INSERT INTO medicine_aliases (id, medicine_id, alias, updated_at)
+            VALUES (?, ?, ?, ?)
+            ON CONFLICT(id) DO UPDATE SET
+              medicine_id=excluded.medicine_id,
+              alias=excluded.alias,
+              updated_at=excluded.updated_at
+          `);
+          for (const ra of aliasesToLocal) {
+            const sqliteTime = this.formatToSqliteTime(ra.updated_at);
+            stmt.run(ra.id, ra.medicine_id, ra.alias, sqliteTime);
+          }
+        });
+        transaction();
+        console.log(`[Supabase Sync] medicine_aliases ${aliasesToLocal.length}건 다운로드 적용 완료.`);
+      }
+
       console.log('[Supabase Sync] 양방향 전체 벌크 동기화 완료!');
     } catch (err) {
       console.error('[Supabase Sync] 동기화 오류 발생:', err);
@@ -937,6 +1019,7 @@ class InventoryManager {
     }
 
     const stockInfo = this.calculateStockInfo(med);
+    const aliases = this.db.prepare('SELECT alias FROM medicine_aliases WHERE medicine_id = ?').all(medicineId).map(row => row.alias);
 
     return {
       totalStock: stockInfo.totalStock,
@@ -948,19 +1031,42 @@ class InventoryManager {
       name: med.name,
       category_id: med.category_id,
       categoryName: med.category_name || '미분류',
-      safety_stock: med.safety_stock
+      safety_stock: med.safety_stock,
+      aliases
     };
   }
 
   addMedicine(data) {
-    const { name, category_id, pack_size, unopened_packs, opened_pack_remain, safety_stock, unit } = data;
+    const { name, category_id, pack_size, unopened_packs, opened_pack_remain, safety_stock, unit, aliases } = data;
     if (!name || !pack_size || pack_size <= 0) {
       throw new Error('약재명과 유효한 팩 규격은 필수입니다.');
     }
 
     const catId = Number(category_id || 1);
 
-    try {
+    // 이명 중복 및 유효성 검사
+    if (aliases && aliases.length > 0) {
+      for (const alias of aliases) {
+        const cleanAlias = alias.trim();
+        if (!cleanAlias) continue;
+        
+        // 1. 기존 약재 이름과 중복되는지 검사
+        const dupName = this.db.prepare('SELECT id FROM medicines WHERE name = ?').get(cleanAlias);
+        if (dupName) {
+          throw new Error(`별칭 "${cleanAlias}"은(는) 이미 존재하는 약재명입니다.`);
+        }
+        // 2. 기존 다른 약재의 이명과 중복되는지 검사
+        const dupAlias = this.db.prepare('SELECT id FROM medicine_aliases WHERE alias = ?').get(cleanAlias);
+        if (dupAlias) {
+          throw new Error(`별칭 "${cleanAlias}"은(는) 이미 다른 약재의 별칭으로 사용 중입니다.`);
+        }
+      }
+    }
+
+    let newId = 0;
+    const insertedAliasIds = [];
+
+    const transaction = this.db.transaction(() => {
       const stmt = this.db.prepare(`
         INSERT INTO medicines (name, category_id, pack_size, unopened_packs, opened_pack_remain, safety_stock, unit, updated_at)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?)
@@ -975,14 +1081,34 @@ class InventoryManager {
         unit || 'g',
         this.getAdjustedSqliteTime()
       );
-      const newId = result.lastInsertRowid;
+      newId = result.lastInsertRowid;
+
+      if (aliases && aliases.length > 0) {
+        const aliasStmt = this.db.prepare(`
+          INSERT INTO medicine_aliases (medicine_id, alias, updated_at)
+          VALUES (?, ?, ?)
+        `);
+        for (const alias of aliases) {
+          const cleanAlias = alias.trim();
+          if (!cleanAlias) continue;
+          const res = aliasStmt.run(newId, cleanAlias, this.getAdjustedSqliteTime());
+          insertedAliasIds.push(res.lastInsertRowid);
+        }
+      }
+    });
+
+    try {
+      transaction();
       
       this.syncItemToSupabase('medicines', newId).catch(err => console.error('[Supabase Sync Error] medicines:', err));
+      for (const aliasId of insertedAliasIds) {
+        this.syncItemToSupabase('medicine_aliases', aliasId).catch(err => console.error('[Supabase Sync Error] medicine_aliases:', err));
+      }
 
       return newId;
     } catch (err) {
       if (err.message.includes('UNIQUE')) {
-        throw new Error(`이미 존재하는 약재명입니다: ${name}`);
+        throw new Error(`이미 존재하는 약재명 또는 별칭입니다.`);
       }
       throw err;
     }
@@ -1022,6 +1148,9 @@ class InventoryManager {
 
     let loss = 0;
     let insertedLogId = 0;
+    const insertedAliasIds = [];
+    const deletedAliasIds = [];
+
     const transaction = this.db.transaction(() => {
       const med = this.db.prepare('SELECT * FROM medicines WHERE id = ?').get(medId);
       if (!med) throw new Error('약재를 찾을 수 없습니다.');
@@ -1052,22 +1181,77 @@ class InventoryManager {
         `).run(medId, loss, this.getAdjustedSqliteTime(), `수동 데이터 보정 (오차: ${loss > 0 ? '+' : ''}${loss}g)`);
         insertedLogId = resLog.lastInsertRowid;
       }
+
+      // 이명(Aliases) 업데이트 로직
+      if (updateData.aliases !== undefined) {
+        const oldAliases = this.db.prepare('SELECT id, alias FROM medicine_aliases WHERE medicine_id = ?').all(medId);
+        const oldAliasesMap = new Map(oldAliases.map(a => [a.alias, a.id]));
+        const newAliases = updateData.aliases.map(a => a.trim()).filter(Boolean);
+
+        // 중복성 검증
+        for (const alias of newAliases) {
+          if (alias === updated.name) continue; // 본인 약재명과 같은 건 무시
+
+          const dupName = this.db.prepare('SELECT id FROM medicines WHERE name = ? AND id != ?').get(alias, medId);
+          if (dupName) {
+            throw new Error(`별칭 "${alias}"은(는) 이미 존재하는 약재명입니다.`);
+          }
+
+          const dupAlias = this.db.prepare('SELECT id FROM medicine_aliases WHERE alias = ? AND medicine_id != ?').get(alias, medId);
+          if (dupAlias) {
+            throw new Error(`별칭 "${alias}"은(는) 이미 다른 약재의 별칭으로 사용 중입니다.`);
+          }
+        }
+
+        const toDelete = oldAliases.filter(a => !newAliases.includes(a.alias));
+        const toInsert = newAliases.filter(a => !oldAliasesMap.has(a));
+
+        for (const a of toDelete) {
+          this.recordDeleted('medicine_aliases', a.id);
+          this.db.prepare('DELETE FROM medicine_aliases WHERE id = ?').run(a.id);
+          deletedAliasIds.push(a.id);
+        }
+
+        const insertStmt = this.db.prepare(`
+          INSERT INTO medicine_aliases (medicine_id, alias, updated_at)
+          VALUES (?, ?, ?)
+        `);
+        for (const alias of toInsert) {
+          const res = insertStmt.run(medId, alias, this.getAdjustedSqliteTime());
+          insertedAliasIds.push(res.lastInsertRowid);
+        }
+      }
     });
 
-    transaction();
+    try {
+      transaction();
 
-    this.syncItemToSupabase('medicines', medId).catch(err => console.error('[Supabase Sync Error] medicines:', err));
-    if (insertedLogId > 0) {
-      this.syncItemToSupabase('stock_logs', insertedLogId).catch(err => console.error('[Supabase Sync Error] stock_logs:', err));
+      this.syncItemToSupabase('medicines', medId).catch(err => console.error('[Supabase Sync Error] medicines:', err));
+      if (insertedLogId > 0) {
+        this.syncItemToSupabase('stock_logs', insertedLogId).catch(err => console.error('[Supabase Sync Error] stock_logs:', err));
+      }
+
+      for (const id of deletedAliasIds) {
+        this.syncDeletedToSupabase('medicine_aliases', id).catch(err => console.error('[Supabase Sync Error] delete medicine_aliases:', err));
+      }
+      for (const id of insertedAliasIds) {
+        this.syncItemToSupabase('medicine_aliases', id).catch(err => console.error('[Supabase Sync Error] medicine_aliases:', err));
+      }
+
+      return loss;
+    } catch (err) {
+      if (err.message.includes('UNIQUE')) {
+        throw new Error(`이미 존재하는 약재명 또는 별칭입니다.`);
+      }
+      throw err;
     }
-
-    return loss;
   }
 
   deleteMedicine(medicineId) {
     try {
       const itemIds = this.db.prepare('SELECT id FROM prescription_items WHERE medicine_id = ?').all(medicineId).map(row => row.id);
       const logIds = this.db.prepare('SELECT id FROM stock_logs WHERE medicine_id = ?').all(medicineId).map(row => row.id);
+      const aliasIds = this.db.prepare('SELECT id FROM medicine_aliases WHERE medicine_id = ?').all(medicineId).map(row => row.id);
 
       this.db.transaction(() => {
         for (const itemId of itemIds) {
@@ -1076,10 +1260,14 @@ class InventoryManager {
         for (const logId of logIds) {
           this.recordDeleted('stock_logs', logId);
         }
+        for (const aliasId of aliasIds) {
+          this.recordDeleted('medicine_aliases', aliasId);
+        }
         this.recordDeleted('medicines', medicineId);
 
         this.db.prepare('DELETE FROM prescription_items WHERE medicine_id = ?').run(medicineId);
         this.db.prepare('DELETE FROM stock_logs WHERE medicine_id = ?').run(medicineId);
+        this.db.prepare('DELETE FROM medicine_aliases WHERE medicine_id = ?').run(medicineId);
         this.db.prepare('DELETE FROM medicines WHERE id = ?').run(medicineId);
       })();
 
@@ -1088,6 +1276,9 @@ class InventoryManager {
       }
       for (const logId of logIds) {
         this.syncDeletedToSupabase('stock_logs', logId).catch(err => console.error('[Supabase Sync Error] delete stock_logs:', err));
+      }
+      for (const aliasId of aliasIds) {
+        this.syncDeletedToSupabase('medicine_aliases', aliasId).catch(err => console.error('[Supabase Sync Error] delete medicine_aliases:', err));
       }
       this.syncDeletedToSupabase('medicines', medicineId).catch(err => console.error('[Supabase Sync Error] delete medicines:', err));
 
@@ -1481,9 +1672,11 @@ class InventoryManager {
 
   getAllMedicines() {
     const list = this.db.prepare(`
-      SELECT m.*, c.name as category_name 
+      SELECT m.*, c.name as category_name, GROUP_CONCAT(a.alias, ',') as aliases_str
       FROM medicines m
       LEFT JOIN categories c ON m.category_id = c.id
+      LEFT JOIN medicine_aliases a ON m.id = a.medicine_id
+      GROUP BY m.id
       ORDER BY m.name ASC
     `).all();
     return list.map(m => {
@@ -1492,7 +1685,8 @@ class InventoryManager {
         ...m,
         total_stock: stockInfo.totalStock,
         formatted_stock: stockInfo.formatted,
-        category_name: m.category_name || '미분류'
+        category_name: m.category_name || '미분류',
+        aliases: m.aliases_str ? m.aliases_str.split(',') : []
       };
     });
   }

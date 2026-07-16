@@ -112,19 +112,39 @@ class QuickSearchEngine {
   /**
    * 검색어 매칭 (초성 검색 지원)
    */
-  match(medName, query) {
+  match(medName, query, aliases = []) {
     const cleanQuery = query.trim().toLowerCase();
     if (!cleanQuery) return true;
 
-    const cleanMedName = medName.toLowerCase();
     const isChoseongOnly = /^[ㄱ-ㅎ\s]+$/.test(cleanQuery);
 
+    // 1. 기본 약재명 매칭
+    const cleanMedName = medName.toLowerCase();
+    let isMatched = false;
     if (isChoseongOnly) {
       const medChoseong = this.getChoseong(cleanMedName);
-      return medChoseong.includes(cleanQuery);
+      isMatched = medChoseong.includes(cleanQuery);
     } else {
-      return cleanMedName.includes(cleanQuery);
+      isMatched = cleanMedName.includes(cleanQuery);
     }
+    if (isMatched) return true;
+
+    // 2. 이명(Aliases) 매칭
+    if (aliases && aliases.length > 0) {
+      for (const alias of aliases) {
+        const cleanAlias = alias.trim().toLowerCase();
+        if (!cleanAlias) continue;
+        
+        if (isChoseongOnly) {
+          const aliasChoseong = this.getChoseong(cleanAlias);
+          if (aliasChoseong.includes(cleanQuery)) return true;
+        } else {
+          if (cleanAlias.includes(cleanQuery)) return true;
+        }
+      }
+    }
+
+    return false;
   }
 
   /**
