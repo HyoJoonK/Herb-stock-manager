@@ -582,12 +582,12 @@ function renderPastPrescriptions() {
 
   if (list.length === 0) {
     wrapper.style.display = 'none';
-    empty.style.display = 'flex';
+    empty.style.display = currentHistoryTab === 'history' ? 'flex' : 'none';
     return;
   }
 
-  wrapper.style.display = 'block';
   empty.style.display = 'none';
+  wrapper.style.display = currentHistoryTab === 'history' ? 'block' : 'none';
 
   list.forEach(p => {
     const tr = document.createElement('tr');
@@ -1609,7 +1609,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // 4. 탭 전용 화면 렌더링 갱신
     if (tabName === 'prescription') {
       renderPrescription();
-      renderPastPrescriptions();
+      setHistoryTab(currentHistoryTab);
     } else if (tabName === 'predict') {
       renderPredictView();
     } else if (tabName === 'batch') {
@@ -2328,7 +2328,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     
     if (presets.length === 0) {
-      empty.style.display = 'block';
+      empty.style.display = 'flex';
       return;
     }
     
@@ -2476,12 +2476,12 @@ document.addEventListener('DOMContentLoaded', () => {
     
     if (presets.length === 0) {
       wrapper.style.display = 'none';
-      empty.style.display = 'block';
+      empty.style.display = currentHistoryTab === 'presets' ? 'flex' : 'none';
       return;
     }
     
     empty.style.display = 'none';
-    wrapper.style.display = 'block';
+    wrapper.style.display = currentHistoryTab === 'presets' ? 'block' : 'none';
     
     presets.forEach(p => {
       const tr = document.createElement('tr');
@@ -2980,7 +2980,7 @@ function renderNotifications() {
   }
 
   if (list.length === 0) {
-    emptyState.style.display = 'block';
+    emptyState.style.display = 'flex';
     container.style.display = 'none';
     return;
   }
