@@ -2,6 +2,11 @@
 
 이 프로젝트의 주요 변경 사항을 버전별로 기록합니다. 형식은 [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/)를 참고하며, 버전 관리는 [Semantic Versioning](https://semver.org/lang/ko/)을 따릅니다.
 
+## [1.6.4] - 2026-07-19
+### Fixed
+- 약재 삭제 시 처방 프리셋 항목(prescription_preset_items) 연관 레코드가 삭제/동기화되지 않던 버그 수정
+- 약재 삭제 실패 시 사용자에게 토스트로 오류를 알리도록 프론트엔드 에러 처리 추가
+
 ## [1.6.3] - 2026-07-17
 ### Fixed
 - UI 버그 수정
