@@ -2006,8 +2006,14 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('ctxMenuDelete').addEventListener('click', () => {
     if (contextTargetMedId !== null) {
       const med = dbManager.getAllMedicines().find(m => m.id === contextTargetMedId);
-      if (confirm(`⚠️ 정말로 "${med.name}" 약재를 삭제하시겠습니까? 관련 입출고 로그 및 처방 내역 연쇄 정보가 모두 영구 유실됩니다.`)) {
-        dbManager.deleteMedicine(contextTargetMedId);
+      if (confirm(`⚠️ 정말로 "${med.name}" 약재를 삭제하시겠습니까? 관련 입출고 로그, 처방 내역 및 프리셋 구성 정보가 모두 영구 유실됩니다.`)) {
+        try {
+          dbManager.deleteMedicine(contextTargetMedId);
+        } catch (err) {
+          showToast(`⚠️ 약재 삭제 실패: ${err.message}`, true);
+          contextTargetMedId = null;
+          return;
+        }
         showToast(`🗑️ "${med.name}" 약재 데이터가 영구 삭제되었습니다.`, true);
         
         if (currentInquiryMedId === contextTargetMedId) {

@@ -1665,6 +1665,7 @@ class InventoryManager {
       const itemIds = this.db.prepare('SELECT id FROM prescription_items WHERE medicine_id = ?').all(medicineId).map(row => row.id);
       const logIds = this.db.prepare('SELECT id FROM stock_logs WHERE medicine_id = ?').all(medicineId).map(row => row.id);
       const aliasIds = this.db.prepare('SELECT id FROM medicine_aliases WHERE medicine_id = ?').all(medicineId).map(row => row.id);
+      const presetItemIds = this.db.prepare('SELECT id FROM prescription_preset_items WHERE medicine_id = ?').all(medicineId).map(row => row.id);
 
       this.db.transaction(() => {
         for (const itemId of itemIds) {
@@ -1676,24 +1677,42 @@ class InventoryManager {
         for (const aliasId of aliasIds) {
           this.recordDeleted('medicine_aliases', aliasId);
         }
+        for (const presetItemId of presetItemIds) {
+          this.recordDeleted('prescription_preset_items', presetItemId);
+        }
         this.recordDeleted('medicines', medicineId);
 
         this.db.prepare('DELETE FROM prescription_items WHERE medicine_id = ?').run(medicineId);
         this.db.prepare('DELETE FROM stock_logs WHERE medicine_id = ?').run(medicineId);
         this.db.prepare('DELETE FROM medicine_aliases WHERE medicine_id = ?').run(medicineId);
+        this.db.prepare('DELETE FROM prescription_preset_items WHERE medicine_id = ?').run(medicineId);
         this.db.prepare('DELETE FROM medicines WHERE id = ?').run(medicineId);
       })();
 
-      for (const itemId of itemIds) {
-        this.syncDeletedToSupabase('prescription_items', itemId).catch(err => console.error('[Supabase Sync Error] delete prescription_items:', err));
-      }
-      for (const logId of logIds) {
-        this.syncDeletedToSupabase('stock_logs', logId).catch(err => console.error('[Supabase Sync Error] delete stock_logs:', err));
-      }
-      for (const aliasId of aliasIds) {
-        this.syncDeletedToSupabase('medicine_aliases', aliasId).catch(err => console.error('[Supabase Sync Error] delete medicine_aliases:', err));
-      }
-      this.syncDeletedToSupabase('medicines', medicineId).catch(err => console.error('[Supabase Sync Error] delete medicines:', err));
+      const deleteSubPromises = [
+        ...itemIds.map(itemId =>
+          this.syncDeletedToSupabase('prescription_items', itemId)
+            .catch(err => console.error('[Supabase Sync Error] delete prescription_items:', err))
+        ),
+        ...logIds.map(logId =>
+          this.syncDeletedToSupabase('stock_logs', logId)
+            .catch(err => console.error('[Supabase Sync Error] delete stock_logs:', err))
+        ),
+        ...aliasIds.map(aliasId =>
+          this.syncDeletedToSupabase('medicine_aliases', aliasId)
+            .catch(err => console.error('[Supabase Sync Error] delete medicine_aliases:', err))
+        ),
+        ...presetItemIds.map(presetItemId =>
+          this.syncDeletedToSupabase('prescription_preset_items', presetItemId)
+            .catch(err => console.error('[Supabase Sync Error] delete prescription_preset_items:', err))
+        )
+      ];
+
+      Promise.all(deleteSubPromises)
+        .then(() => {
+          this.syncDeletedToSupabase('medicines', medicineId)
+            .catch(err => console.error('[Supabase Sync Error] delete medicines:', err));
+        });
 
       return true;
     } catch (err) {
