@@ -541,30 +541,30 @@ body {
   z-index: 10;
 }
 
-/* 처방 이력/프리셋 테이블 컬럼 간격 조정
-   (처방명↔환자명 중간 / 약재수 살짝 좁게 / 일시 넓게 / 상태·작업 중간) */
+/* 처방 이력/프리셋 테이블 컬럼 정렬·간격 조정
+   모든 컬럼은 헤더(th)와 본문(td)이 가운데 정렬로 일치 */
+#pastPrescriptionsWrapper .presc-table th,
+#pastPrescriptionsWrapper .presc-table td,
+#presetsHistoryWrapper .presc-table th,
+#presetsHistoryWrapper .presc-table td {
+  text-align: center;
+}
+
+/* 포함 약재수: 앞뒤 살짝 좁게 */
 #pastPrescriptionsWrapper .presc-table th:nth-child(3),
 #pastPrescriptionsWrapper .presc-table td:nth-child(3),
 #presetsHistoryWrapper .presc-table th:nth-child(3),
 #presetsHistoryWrapper .presc-table td:nth-child(3) {
   padding-left: 8px;
   padding-right: 8px;
-  text-align: center;
 }
 
+/* 조제/등록 일시: 앞은 넓게, 뒤(재고 상태/작업 쪽)는 기본 간격 */
 #pastPrescriptionsWrapper .presc-table th:nth-child(4),
 #pastPrescriptionsWrapper .presc-table td:nth-child(4),
 #presetsHistoryWrapper .presc-table th:nth-child(4),
 #presetsHistoryWrapper .presc-table td:nth-child(4) {
   padding-left: 28px;
-  padding-right: 16px;
-}
-
-#pastPrescriptionsWrapper .presc-table th:nth-child(5),
-#pastPrescriptionsWrapper .presc-table td:nth-child(5),
-#presetsHistoryWrapper .presc-table th:nth-child(5),
-#presetsHistoryWrapper .presc-table td:nth-child(5) {
-  padding-left: 14px;
 }
 
 /* ----------------------------------------------------
