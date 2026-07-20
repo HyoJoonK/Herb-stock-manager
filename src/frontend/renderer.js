@@ -18,6 +18,23 @@ try {
   console.error("화면 배율(DPI) 조정 실패:", e);
 }
 
+// 기본 카테고리('미분류') 고정 UUID (백엔드 상수와 동일)
+const DEFAULT_CATEGORY_ID = require('../backend/InventoryManager').DEFAULT_CATEGORY_ID;
+
+/**
+ * 사용자 입력 데이터를 innerHTML 템플릿에 안전하게 삽입하기 위한 HTML 이스케이프 헬퍼.
+ * 약재명/환자명/메모 등 모든 사용자 유래 문자열은 반드시 이 함수를 거쳐야 합니다. (XSS 방지)
+ */
+function escapeHtml(value) {
+  if (value === undefined || value === null) return '';
+  return String(value)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
 // 글로벌 상태 객체
 let dbManager;
 let csvHandler;
@@ -173,7 +190,7 @@ function renderCategoryTabs(container) {
 
   let html = `<button class="category-tab ${activeCategoryId === '전체' ? 'active' : ''}" data-category-id="전체">전체</button>`;
   categories.forEach(cat => {
-    html += `<button class="category-tab ${activeCategoryId == cat.id ? 'active' : ''}" data-category-id="${cat.id}">${cat.name}</button>`;
+    html += `<button class="category-tab ${activeCategoryId == cat.id ? 'active' : ''}" data-category-id="${escapeHtml(cat.id)}">${escapeHtml(cat.name)}</button>`;
   });
   // 카테고리 동적 추가 + 단추 추가
   html += `<button class="category-add-btn" id="btnCategoryModalOpen">➕ 카테고리 추가</button>`;
@@ -249,22 +266,22 @@ function renderMedicineList(categoryFilter = null) {
     item.dataset.id = med.id;
     item.dataset.packSize = med.pack_size;
 
-    const statusBadge = isUnderSafety 
-      ? `<span class="status-badge status-warning">재고부족 (안전: ${med.safety_stock}g)</span>`
+    const statusBadge = isUnderSafety
+      ? `<span class="status-badge status-warning">재고부족 (안전: ${escapeHtml(med.safety_stock)}g)</span>`
       : `<span class="status-badge status-normal">적정</span>`;
 
-    const aliasText = med.aliases && med.aliases.length > 0 ? ` <span class="med-aliases" style="font-size:11px; color:var(--color-text-muted); font-weight:normal;">(${med.aliases.join(', ')})</span>` : '';
+    const aliasText = med.aliases && med.aliases.length > 0 ? ` <span class="med-aliases" style="font-size:11px; color:var(--color-text-muted); font-weight:normal;">(${escapeHtml(med.aliases.join(', '))})</span>` : '';
     item.innerHTML = `
       <div class="med-info">
         <div style="display:flex; align-items:center; gap:8px;">
-          <span class="med-name">${med.name}${aliasText}</span>
-          <span class="status-badge" style="background:#f1f4f2; color:var(--color-text-muted);">${med.category_name}</span>
+          <span class="med-name">${escapeHtml(med.name)}${aliasText}</span>
+          <span class="status-badge" style="background:#f1f4f2; color:var(--color-text-muted);">${escapeHtml(med.category_name)}</span>
         </div>
-        <div class="med-stock">${med.formatted_stock}</div>
+        <div class="med-stock">${escapeHtml(med.formatted_stock)}</div>
       </div>
       <div style="text-align: right; display:flex; flex-direction:column; align-items:flex-end; gap:4px;">
         ${statusBadge}
-        <span style="font-size:10px; color:var(--color-text-muted);">규격: ${med.pack_size}${med.unit}</span>
+        <span style="font-size:10px; color:var(--color-text-muted);">규격: ${escapeHtml(med.pack_size)}${escapeHtml(med.unit)}</span>
       </div>
     `;
 
@@ -519,9 +536,9 @@ function renderInquiryLogs(medId) {
 
     tr.innerHTML = `
       <td>${typeBadge}</td>
-      <td style="font-weight:700; color:${colorStyle}">${qtyFormatted}</td>
+      <td style="font-weight:700; color:${colorStyle}">${escapeHtml(qtyFormatted)}</td>
       <td style="color:var(--color-text-muted);">${formatUTCToKSTString(log.timestamp).slice(5, 16)}</td>
-      <td style="font-size:11px;">${log.note || ''}</td>
+      <td style="font-size:11px;">${escapeHtml(log.note || '')}</td>
     `;
     tbody.appendChild(tr);
   });
@@ -549,10 +566,10 @@ function renderPrescription() {
     const tr = document.createElement('tr');
     tr.dataset.index = index; // 인덱스를 dataset으로 설정
     tr.innerHTML = `
-      <td style="font-weight:700; color:var(--color-primary);">${item.name}</td>
-      <td style="color:var(--color-text-muted);">${item.pack_size}g 기준</td>
+      <td style="font-weight:700; color:var(--color-primary);">${escapeHtml(item.name)}</td>
+      <td style="color:var(--color-text-muted);">${escapeHtml(item.pack_size)}g 기준</td>
       <td>
-        <input type="text" value="${item.amount}" 
+        <input type="text" value="${escapeHtml(item.amount)}"
                class="presc-item-amount-input numeric-input" data-numeric-type="decimal"
                style="width: 70px; padding: 4px; border: 1px solid var(--color-border); border-radius: 4px; text-align: center;"> g
       </td>
@@ -597,10 +614,9 @@ function renderPastPrescriptions() {
       : '<span style="color:#e67e22; font-weight:bold;">미차감</span>';
 
     tr.innerHTML = `
-      <td style="font-weight:600; color:var(--color-text-muted);">#${p.id}</td>
-      <td style="font-weight:700; color:var(--color-primary);">${p.prescription_name || '(이름 없음)'}</td>
-      <td>${p.patient_name}</td>
-      <td style="text-align:center;">${p.total_items}종</td>
+      <td style="font-weight:700; color:var(--color-primary);">${escapeHtml(p.prescription_name || '(이름 없음)')}</td>
+      <td>${escapeHtml(p.patient_name)}</td>
+      <td style="text-align:center;">${escapeHtml(p.total_items)}종</td>
       <td style="color:var(--color-text-muted); font-size:11px;">${formatUTCToKSTString(p.created_at)}</td>
       <td style="text-align:center; font-size:11px;">${statusHtml}</td>
     `;
@@ -681,12 +697,12 @@ function openPrescriptionDetailModal(prescId) {
     detail.items.forEach(item => {
       const tr = document.createElement('tr');
       tr.innerHTML = `
-        <td style="font-weight:700; color:var(--color-primary);">${item.medicine_name}</td>
-        <td style="text-align:right; font-weight:600;">${item.amount}${item.unit}</td>
+        <td style="font-weight:700; color:var(--color-primary);">${escapeHtml(item.medicine_name)}</td>
+        <td style="text-align:right; font-weight:600;">${escapeHtml(item.amount)}${escapeHtml(item.unit)}</td>
       `;
       tbody.appendChild(tr);
     });
-    
+
     document.getElementById('prescriptionDetailModal').classList.add('show');
   } catch (err) {
     alert(`처방전 상세정보를 불러오지 못했습니다: ${err.message}`);
@@ -719,16 +735,17 @@ function renderPredictView() {
 
   reorderList.forEach(item => {
     const tr = document.createElement('tr');
+    const unitHtml = escapeHtml(item.unit);
     tr.innerHTML = `
-      <td style="font-weight:700; color:var(--color-primary);">${item.name}</td>
-      <td><span class="status-badge" style="background:#f1f4f2; color:var(--color-text-muted);">${item.category}</span></td>
-      <td>${item.packSize}${item.unit}</td>
-      <td style="font-weight:600;">${item.currentStock}${item.unit}</td>
-      <td style="color:var(--color-text-muted);">${item.safetyStock}${item.unit}</td>
-      <td style="color:var(--color-accent); font-weight:700;">-${item.deficit}${item.unit}</td>
-      <td>${item.nextMonthEstimate}${item.unit}</td>
-      <td style="font-weight:700; color:var(--color-primary);">+${item.orderQuantityGrams}${item.unit}</td>
-      <td style="font-weight:700; background:#f5fdf7; color:var(--color-primary);"><span class="sf-icon sf-icon-box"></span> ${item.orderPacks}봉지</td>
+      <td style="font-weight:700; color:var(--color-primary);">${escapeHtml(item.name)}</td>
+      <td><span class="status-badge" style="background:#f1f4f2; color:var(--color-text-muted);">${escapeHtml(item.category)}</span></td>
+      <td>${escapeHtml(item.packSize)}${unitHtml}</td>
+      <td style="font-weight:600;">${escapeHtml(item.currentStock)}${unitHtml}</td>
+      <td style="color:var(--color-text-muted);">${escapeHtml(item.safetyStock)}${unitHtml}</td>
+      <td style="color:var(--color-accent); font-weight:700;">-${escapeHtml(item.deficit)}${unitHtml}</td>
+      <td>${escapeHtml(item.nextMonthEstimate)}${unitHtml}</td>
+      <td style="font-weight:700; color:var(--color-primary);">+${escapeHtml(item.orderQuantityGrams)}${unitHtml}</td>
+      <td style="font-weight:700; background:#f5fdf7; color:var(--color-primary);"><span class="sf-icon sf-icon-box"></span> ${escapeHtml(item.orderPacks)}봉지</td>
     `;
     tbody.appendChild(tr);
   });
@@ -793,7 +810,7 @@ function renderBatchTable() {
     // 카테고리 드롭다운 옵션 태그 생성
     let catOptions = '';
     categories.forEach(c => {
-      catOptions += `<option value="${c.id}" ${item.category_id == c.id ? 'selected' : ''}>${c.name}</option>`;
+      catOptions += `<option value="${escapeHtml(c.id)}" ${item.category_id == c.id ? 'selected' : ''}>${escapeHtml(c.name)}</option>`;
     });
 
     let checkUI = '';
@@ -811,22 +828,22 @@ function renderBatchTable() {
       `;
     } else {
       checkUI = `
-        <td><input type="text" class="batch-pack numeric-input" data-numeric-type="decimal" value="${item.pack_size}"></td>
-        <td><input type="text" class="batch-unopened numeric-input" data-numeric-type="integer" value="${item.unopened_packs}"></td>
-        <td><input type="text" class="batch-remain numeric-input" data-numeric-type="decimal" value="${item.opened_pack_remain}"></td>
-        <td><input type="text" class="batch-safety numeric-input" data-numeric-type="decimal" value="${item.safety_stock}"></td>
+        <td><input type="text" class="batch-pack numeric-input" data-numeric-type="decimal" value="${escapeHtml(item.pack_size)}"></td>
+        <td><input type="text" class="batch-unopened numeric-input" data-numeric-type="integer" value="${escapeHtml(item.unopened_packs)}"></td>
+        <td><input type="text" class="batch-remain numeric-input" data-numeric-type="decimal" value="${escapeHtml(item.opened_pack_remain)}"></td>
+        <td><input type="text" class="batch-safety numeric-input" data-numeric-type="decimal" value="${escapeHtml(item.safety_stock)}"></td>
       `;
     }
 
     tr.innerHTML = `
-      <td style="font-weight:700; color:var(--color-primary);">${item.name}</td>
+      <td style="font-weight:700; color:var(--color-primary);">${escapeHtml(item.name)}</td>
       <td>
         <select class="batch-cat" style="padding: 2px 4px; border:1px solid var(--color-border); border-radius:4px; font-size:11px;">
           ${catOptions}
         </select>
       </td>
       ${checkUI}
-      <td><input type="text" class="batch-unit" value="${item.unit}" style="width:40px;" ${item.is_presence_only === 1 ? 'disabled style="background:var(--bg-primary); color:var(--color-text-muted); text-align:center;"' : ''}></td>
+      <td><input type="text" class="batch-unit" value="${escapeHtml(item.unit)}" style="width:40px;" ${item.is_presence_only === 1 ? 'disabled style="background:var(--bg-primary); color:var(--color-text-muted); text-align:center;"' : ''}></td>
       <td>
         <span class="batch-remove-btn" style="cursor:pointer;"><span class="sf-icon sf-icon-xmark"></span></span>
       </td>
@@ -868,8 +885,8 @@ function saveBatchChanges() {
   let hasError = false;
 
   for (const row of rows) {
-    const id = parseInt(row.dataset.id);
-    const category_id = parseInt(row.querySelector('.batch-cat').value);
+    const id = row.dataset.id;
+    const category_id = row.querySelector('.batch-cat').value;
     
     const checkbox = row.querySelector('.batch-presence-checkbox');
     const isPresenceOnly = !!checkbox;
@@ -963,8 +980,7 @@ function handleEditCategorySave() {
   if (!idStr) return;
 
   try {
-    const categoryId = parseInt(idStr);
-    dbManager.updateCategory(categoryId, name);
+    dbManager.updateCategory(idStr, name);
     showToast(`✨ 카테고리가 "${name}"(으)로 수정되었습니다.`);
 
     // 모달 닫기
@@ -1011,7 +1027,7 @@ function openAddMedicineModal() {
   const select = document.getElementById('editMedCategorySelect');
   select.innerHTML = '';
   dbManager.getAllCategories().forEach(c => {
-    select.innerHTML += `<option value="${c.id}">${c.name}</option>`;
+    select.innerHTML += `<option value="${escapeHtml(c.id)}">${escapeHtml(c.name)}</option>`;
   });
 
   modal.classList.add('show');
@@ -1051,7 +1067,7 @@ function openEditMedicineModal(medId) {
   const select = document.getElementById('editMedCategorySelect');
   select.innerHTML = '';
   dbManager.getAllCategories().forEach(c => {
-    select.innerHTML += `<option value="${c.id}" ${med.category_id == c.id ? 'selected' : ''}>${c.name}</option>`;
+    select.innerHTML += `<option value="${escapeHtml(c.id)}" ${med.category_id == c.id ? 'selected' : ''}>${escapeHtml(c.name)}</option>`;
   });
 
   modal.classList.add('show');
@@ -1067,7 +1083,7 @@ function handleEditMedSave() {
   const name = document.getElementById('editMedName').value.trim();
   const aliasesStr = document.getElementById('editMedAliases').value;
   const aliases = aliasesStr ? aliasesStr.split(',').map(a => a.trim()).filter(Boolean) : [];
-  const category_id = parseInt(document.getElementById('editMedCategorySelect').value);
+  const category_id = document.getElementById('editMedCategorySelect').value;
   
   const is_presence_only = parseInt(document.querySelector('input[name="editMedCheckType"]:checked').value);
   let packSize = parseFloat(document.getElementById('editMedPackSize').value);
@@ -1102,7 +1118,7 @@ function handleEditMedSave() {
   try {
     if (idStr) {
       // 수정 모드
-      const medId = parseInt(idStr);
+      const medId = idStr;
       const loss = dbManager.updateMedicine(medId, {
         category_id,
         pack_size: packSize,
@@ -1216,8 +1232,9 @@ function showToast(message, isError = false) {
     '✅': 'checkmark'
   };
 
-  let formattedMessage = message;
-  
+  // 메시지에 약재명/에러 메시지 등 사용자 유래 문자열이 섞일 수 있으므로 항상 이스케이프 후 삽입
+  let formattedMessage = escapeHtml(message);
+
   // Find the leading emoji (if any) and replace it with a styled span
   for (const [emoji, iconName] of Object.entries(emojiToSfMap)) {
     if (message.startsWith(emoji)) {
@@ -1232,7 +1249,7 @@ function showToast(message, isError = false) {
       }
       
       const restOfMessage = message.slice(emoji.length).trim();
-      formattedMessage = `${iconHtml} ${restOfMessage}`;
+      formattedMessage = `${iconHtml} ${escapeHtml(restOfMessage)}`;
       break;
     }
   }
@@ -1381,8 +1398,7 @@ document.addEventListener('DOMContentLoaded', () => {
       const removeBtn = e.target.closest('.batch-remove-btn');
       if (removeBtn) {
         const tr = removeBtn.closest('tr');
-        const id = parseInt(tr.dataset.id);
-        batchEditItems.delete(id);
+        batchEditItems.delete(tr.dataset.id);
         renderBatchTable();
       }
     });
@@ -1534,7 +1550,7 @@ document.addEventListener('DOMContentLoaded', () => {
       // 복수 선택 상태 스타일을 렌더링에 동기화 반영
       const items = searchEngine.callbacks.getCurrentListItems();
       items.forEach(item => {
-        const id = parseInt(item.dataset.id);
+        const id = item.dataset.id;
         if (selectedIds.has(id)) {
           item.classList.add('active', 'multi-selected');
         } else {
@@ -1684,7 +1700,7 @@ document.addEventListener('DOMContentLoaded', () => {
       document.querySelector('.presc-mode-switcher').style.display = 'none';
       const titleEl = document.getElementById('prescriptionCardTitle');
       titleEl.style.display = 'block';
-      titleEl.innerHTML = `<span class="sf-icon sf-icon-memo"></span> 조제 수정 (처방 #${prescId})`;
+      titleEl.innerHTML = `<span class="sf-icon sf-icon-memo"></span> 조제 수정 (${escapeHtml(detail.prescription_name || detail.patient_name)})`;
       document.getElementById('prescriptionCard').classList.add('edit-mode-highlight');
 
       // 편집 시에는 항상 환자 처방 모드 필드로 강제 표시 (불러오기 버튼은 감춤)
@@ -1781,7 +1797,7 @@ document.addEventListener('DOMContentLoaded', () => {
       document.querySelector('.presc-mode-switcher').style.display = 'none';
       const titleEl = document.getElementById('prescriptionCardTitle');
       titleEl.style.display = 'block';
-      titleEl.innerHTML = `<span class="sf-icon sf-icon-pencil"></span> 프리셋 수정 (프리셋 #${presetId})`;
+      titleEl.innerHTML = `<span class="sf-icon sf-icon-pencil"></span> 프리셋 수정 (${escapeHtml(detail.preset_name)})`;
       document.getElementById('prescriptionCard').classList.add('edit-mode-highlight');
 
       // 4. 취소 버튼 노출 및 저장 버튼 스타일 조정
@@ -2067,7 +2083,7 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('ctxPrescDelete').addEventListener('click', () => {
     if (contextTargetPrescId !== null) {
       const detail = dbManager.getPrescriptionDetails(contextTargetPrescId);
-      if (confirm(`⚠️ 정말로 처방전 #${contextTargetPrescId} (${detail.prescription_name} - ${detail.patient_name})을 삭제하시겠습니까? 소모된 약재 재고가 모두 자동으로 복원됩니다.`)) {
+      if (confirm(`⚠️ 정말로 처방전 (${detail.prescription_name || '(이름 없음)'} - ${detail.patient_name})을 삭제하시겠습니까? 소모된 약재 재고가 모두 자동으로 복원됩니다.`)) {
         try {
           dbManager.deletePrescription(contextTargetPrescId);
           showToast(`🗑️ 처방 내역이 삭제되고 재고가 복원되었습니다.`, true);
@@ -2142,7 +2158,7 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('ctxPresetDelete').addEventListener('click', () => {
     if (contextTargetPresetId !== null) {
       const id = contextTargetPresetId;
-      const preset = dbManager.getAllPresets().find(pr => pr.id === Number(id));
+      const preset = dbManager.getAllPresets().find(pr => String(pr.id) === String(id));
       if (confirm(`⚠️ 정말로 "${preset.preset_name}" 프리셋을 삭제하시겠습니까?`)) {
         try {
           dbManager.deletePreset(id);
@@ -2174,15 +2190,14 @@ document.addEventListener('DOMContentLoaded', () => {
       const catId = e.target.dataset.categoryId;
       if (catId === '전체') return; // '전체' 탭은 수정/삭제 불가
 
-      const parsedId = parseInt(catId);
-      if (parsedId === 1) {
+      if (catId === DEFAULT_CATEGORY_ID) {
         e.preventDefault();
         showToast('ℹ️ 기본 카테고리는 수정하거나 삭제할 수 없습니다.');
         return;
       }
 
       e.preventDefault();
-      contextTargetCategoryId = parsedId;
+      contextTargetCategoryId = catId;
       showContextMenu('categoryContextMenu', e.pageX, e.pageY);
     }
   });
@@ -2218,9 +2233,9 @@ document.addEventListener('DOMContentLoaded', () => {
       if (isPrescriptionEditMode && currentEditingPrescId !== null) {
         dbManager.updatePrescriptionWithItems(currentEditingPrescId, prescName, patName, items, prescNote, isDeduct);
         if (isDeduct) {
-          showToast(`🎉 처방전 #${currentEditingPrescId} 수정 완료 및 실시간 재고 갱신 처리되었습니다.`);
+          showToast(`🎉 처방전 수정 완료 및 실시간 재고 갱신 처리되었습니다.`);
         } else {
-          showToast(`🎉 처방전 #${currentEditingPrescId} 수정 완료 및 정보 저장 처리되었습니다. (재고 미차감)`);
+          showToast(`🎉 처방전 수정 완료 및 정보 저장 처리되었습니다. (재고 미차감)`);
         }
         exitPrescriptionEditMode();
       } else {
@@ -2342,13 +2357,13 @@ document.addEventListener('DOMContentLoaded', () => {
     presets.forEach(p => {
       const tr = document.createElement('tr');
       tr.innerHTML = `
-        <td style="font-weight: 700; color: var(--color-primary);">${p.preset_name}</td>
-        <td style="font-style: italic; color: var(--color-text-muted); font-size: 11px;">${p.note || '-'}</td>
+        <td style="font-weight: 700; color: var(--color-primary);">${escapeHtml(p.preset_name)}</td>
+        <td style="font-style: italic; color: var(--color-text-muted); font-size: 11px;">${escapeHtml(p.note || '-')}</td>
         <td style="text-align: center;">
-          <button class="btn-load-preset" data-id="${p.id}">적용</button>
+          <button class="btn-load-preset" data-id="${escapeHtml(p.id)}">적용</button>
         </td>
         <td style="text-align: center;">
-          <button class="btn-delete-preset" data-id="${p.id}"><span class="sf-icon sf-icon-trash"></span></button>
+          <button class="btn-delete-preset" data-id="${escapeHtml(p.id)}"><span class="sf-icon sf-icon-trash"></span></button>
         </td>
       `;
       tbody.appendChild(tr);
@@ -2366,7 +2381,7 @@ document.addEventListener('DOMContentLoaded', () => {
     tbody.querySelectorAll('.btn-delete-preset').forEach(btn => {
       btn.addEventListener('click', () => {
         const id = btn.getAttribute('data-id');
-        const preset = presets.find(p => p.id === Number(id));
+        const preset = presets.find(p => String(p.id) === String(id));
         if (confirm(`"${preset.preset_name}" 프리셋을 삭제하시겠습니까?`)) {
           try {
             dbManager.deletePreset(id);
@@ -2493,14 +2508,13 @@ document.addEventListener('DOMContentLoaded', () => {
       const tr = document.createElement('tr');
       tr.style.cursor = 'pointer';
       tr.innerHTML = `
-        <td style="font-weight:600; color:var(--color-text-muted);">#${p.id}</td>
-        <td style="font-weight:700; color:var(--color-primary);">${p.preset_name}</td>
-        <td style="font-style: italic; color:var(--color-text-muted); font-size:11px;">${p.note || '-'}</td>
-        <td style="text-align:center;">${p.total_items}종</td>
+        <td style="font-weight:700; color:var(--color-primary);">${escapeHtml(p.preset_name)}</td>
+        <td style="font-style: italic; color:var(--color-text-muted); font-size:11px;">${escapeHtml(p.note || '-')}</td>
+        <td style="text-align:center;">${escapeHtml(p.total_items)}종</td>
         <td style="color:var(--color-text-muted); font-size:11px;">${formatUTCToKSTString(p.created_at)}</td>
         <td style="text-align:center; display: flex; gap: 6px; justify-content: center; align-items: center; height: 100%;">
-          <button class="btn btn-secondary btn-apply-preset-hist" data-id="${p.id}" style="padding: 2px 8px; font-size: 11px;">적용</button>
-          <button class="btn btn-primary btn-delete-preset-hist" data-id="${p.id}" style="padding: 2px 8px; font-size: 11px; background: #e74c3c; border-color: #e74c3c;">삭제</button>
+          <button class="btn btn-secondary btn-apply-preset-hist" data-id="${escapeHtml(p.id)}" style="padding: 2px 8px; font-size: 11px;">적용</button>
+          <button class="btn btn-primary btn-delete-preset-hist" data-id="${escapeHtml(p.id)}" style="padding: 2px 8px; font-size: 11px; background: #e74c3c; border-color: #e74c3c;">삭제</button>
         </td>
       `;
       
@@ -2534,7 +2548,7 @@ document.addEventListener('DOMContentLoaded', () => {
       btn.addEventListener('click', (e) => {
         e.stopPropagation();
         const id = btn.getAttribute('data-id');
-        const preset = presets.find(pr => pr.id === Number(id));
+        const preset = presets.find(pr => String(pr.id) === String(id));
         if (confirm(`"${preset.preset_name}" 프리셋을 삭제하시겠습니까?`)) {
           try {
             dbManager.deletePreset(id);
@@ -2566,8 +2580,8 @@ document.addEventListener('DOMContentLoaded', () => {
       detail.items.forEach(item => {
         const tr = document.createElement('tr');
         tr.innerHTML = `
-          <td>${item.medicine_name}</td>
-          <td style="text-align: right; font-weight: bold;">${item.amount}${item.unit}</td>
+          <td>${escapeHtml(item.medicine_name)}</td>
+          <td style="text-align: right; font-weight: bold;">${escapeHtml(item.amount)}${escapeHtml(item.unit)}</td>
         `;
         tbody.appendChild(tr);
       });
@@ -3012,13 +3026,13 @@ function renderNotifications() {
     
     const timeStr = formatUTCToKSTString(n.created_at);
 
-    // 버튼 구성 (크기 키움)
+    // 버튼 구성 (inline onclick 제거: CSP 및 XSS 방어를 위해 data-속성 + 이벤트 위임 방식 사용)
     let actionButtons = '';
     if (n.is_read === 0) {
-      actionButtons += `<button class="btn btn-primary" onclick="openNotificationAdjustModal(event, ${n.id}, ${n.medicine_id}, '${n.medicine_name.replace(/'/g, "\\'")}')" style="font-size: 11px; padding: 4px 10px; height: 26px; display: inline-flex; align-items: center; justify-content: center;"><span class="sf-icon sf-icon-scale"></span> 잔량 보정</button>`;
-      actionButtons += `<button class="btn" onclick="readNotification(event, ${n.id})" style="font-size: 11px; padding: 4px 10px; height: 26px; border: 1px solid var(--color-border); background: var(--bg-card); display: inline-flex; align-items: center; justify-content: center;">읽음</button>`;
+      actionButtons += `<button class="btn btn-primary noti-action" data-action="adjust" data-noti-id="${n.id}" data-med-id="${escapeHtml(n.medicine_id)}" style="font-size: 11px; padding: 4px 10px; height: 26px; display: inline-flex; align-items: center; justify-content: center;"><span class="sf-icon sf-icon-scale"></span> 잔량 보정</button>`;
+      actionButtons += `<button class="btn noti-action" data-action="read" data-noti-id="${n.id}" style="font-size: 11px; padding: 4px 10px; height: 26px; border: 1px solid var(--color-border); background: var(--bg-card); display: inline-flex; align-items: center; justify-content: center;">읽음</button>`;
     }
-    actionButtons += `<button class="btn" onclick="deleteNotification(event, ${n.id})" style="font-size: 11px; padding: 4px 10px; height: 26px; color: var(--color-accent); border: 1px solid var(--color-border); background: var(--bg-card); display: inline-flex; align-items: center; justify-content: center;">삭제</button>`;
+    actionButtons += `<button class="btn noti-action" data-action="delete" data-noti-id="${n.id}" style="font-size: 11px; padding: 4px 10px; height: 26px; color: var(--color-accent); border: 1px solid var(--color-border); background: var(--bg-card); display: inline-flex; align-items: center; justify-content: center;">삭제</button>`;
 
     card.innerHTML = `
       <div style="display: flex; justify-content: space-between; align-items: center;">
@@ -3026,7 +3040,7 @@ function renderNotifications() {
         ${n.is_read === 0 ? '<span style="background: var(--color-accent); color: white; border-radius: 4px; padding: 1px 4px; font-size: 9px; font-weight: bold;">NEW</span>' : ''}
       </div>
       <div style="font-size: 12.5px; line-height: 1.45; color: var(--color-text-main); font-weight: ${n.is_read === 0 ? '600' : 'normal'}; word-break: keep-all; margin: 2px 0 4px 0;">
-        ${n.message}
+        ${escapeHtml(n.message)}
       </div>
       <div style="display: flex; justify-content: flex-end; gap: 6px; margin-top: 4px;">
         ${actionButtons}
@@ -3036,11 +3050,11 @@ function renderNotifications() {
   });
 }
 
-window.openNotificationAdjustModal = function(e, notiId, medId, medName) {
+window.openNotificationAdjustModal = function(e, notiId, medId) {
   if (e) e.stopPropagation();
   const modal = document.getElementById('adjustNotificationRemainModal');
-  const med = dbManager.getAllMedicines().find(m => m.id === medId);
-  
+  const med = dbManager.getAllMedicines().find(m => String(m.id) === String(medId));
+
   if (!med) {
     alert('해당 약재를 찾을 수 없습니다.');
     return;
@@ -3051,8 +3065,8 @@ window.openNotificationAdjustModal = function(e, notiId, medId, medName) {
   if (popover) popover.style.display = 'none';
 
   document.getElementById('adjNotificationId').value = notiId;
-  document.getElementById('adjNotificationMedId').value = medId;
-  document.getElementById('adjNotificationMedNameLabel').textContent = `약재명: ${medName} (규격: ${med.pack_size}${med.unit})`;
+  document.getElementById('adjNotificationMedId').value = med.id;
+  document.getElementById('adjNotificationMedNameLabel').textContent = `약재명: ${med.name} (규격: ${med.pack_size}${med.unit})`;
   
   document.getElementById('adjNotificationPacks').value = med.unopened_packs;
   document.getElementById('adjNotificationRemain').value = med.opened_pack_remain;
@@ -3084,6 +3098,26 @@ function initNotificationEvents() {
   const btnNoti = document.getElementById('btnNotifications');
   const popoverNoti = document.getElementById('notificationPopover');
   const btnCloseNoti = document.getElementById('btnNotificationClose');
+
+  // 알림 카드 액션 버튼 이벤트 위임 (inline onclick 대체)
+  const notiListContainer = document.getElementById('notificationListContainer');
+  if (notiListContainer) {
+    notiListContainer.addEventListener('click', (e) => {
+      const btn = e.target.closest('.noti-action');
+      if (!btn) return;
+      e.stopPropagation();
+
+      const action = btn.dataset.action;
+      const notiId = parseInt(btn.dataset.notiId);
+      if (action === 'adjust') {
+        window.openNotificationAdjustModal(null, notiId, btn.dataset.medId);
+      } else if (action === 'read') {
+        window.readNotification(null, notiId);
+      } else if (action === 'delete') {
+        window.deleteNotification(null, notiId);
+      }
+    });
+  }
 
   if (btnNoti && popoverNoti) {
     btnNoti.addEventListener('click', (e) => {
@@ -3127,7 +3161,7 @@ function initNotificationEvents() {
   if (btnAdjSave && modalAdj) {
     btnAdjSave.addEventListener('click', () => {
       const notiId = parseInt(document.getElementById('adjNotificationId').value);
-      const medId = parseInt(document.getElementById('adjNotificationMedId').value);
+      const medId = document.getElementById('adjNotificationMedId').value;
       const packs = parseInt(document.getElementById('adjNotificationPacks').value) || 0;
       const remain = parseFloat(document.getElementById('adjNotificationRemain').value) || 0;
 

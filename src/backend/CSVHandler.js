@@ -140,11 +140,11 @@ class CSVHandler {
         const categoryName = (columns[1] ? columns[1].trim() : '') || '미분류';
         
         // 카테고리 DB 동적 추가 및 ID 획득
-        let categoryId = 1;
+        let categoryId = dbManager.defaultCategoryId;
         try {
           categoryId = dbManager.addCategory(categoryName);
         } catch (catErr) {
-          console.warn(`카테고리 "${categoryName}" 등록 실패, 미분류(ID 1)로 대체합니다.`, catErr);
+          console.warn(`카테고리 "${categoryName}" 등록 실패, 미분류로 대체합니다.`, catErr);
         }
 
         // C 컬럼: 팩 규격 - 없거나 0 이하면 기본 규격 500g 적용
@@ -228,7 +228,11 @@ class CSVHandler {
 
     medicines.forEach(m => {
       const escape = (val) => {
-        const str = (val === undefined || val === null) ? '' : val.toString();
+        let str = (val === undefined || val === null) ? '' : val.toString();
+        // 수식 인젝션(CSV Injection) 방어: 스프레드시트가 수식으로 해석하는 선두 문자를 무력화
+        if (/^[=+\-@\t\r]/.test(str)) {
+          str = `'${str}`;
+        }
         if (str.includes(',') || str.includes('"') || str.includes('\n')) {
           return `"${str.replace(/"/g, '""')}"`;
         }

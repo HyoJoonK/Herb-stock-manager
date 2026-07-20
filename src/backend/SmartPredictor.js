@@ -101,7 +101,8 @@ class SmartPredictor {
     // Supabase 동기화 트리거 (비동기)
     if (this.dbManager.supabase) {
       suggestions.forEach(s => {
-        this.dbManager.syncItemToSupabase('medicines', s.medicineId);
+        this.dbManager.syncItemToSupabase('medicines', s.medicineId)
+          .catch(err => console.error('[Supabase Sync Error] safety_stock medicines:', err));
       });
     }
     return true;

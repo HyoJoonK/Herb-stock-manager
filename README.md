@@ -38,6 +38,14 @@ npm start
 
 `npm start`는 Electron 앱을 개발 모드로 실행합니다. 개발 모드에서는 자동 업데이트 체크가 시뮬레이션되며 실제 서버에 접속하지 않습니다.
 
+### 테스트
+
+```bash
+npm test
+```
+
+Node 내장 테스트 러너(`node:test`)로 재고 연산/처방 롤백/스키마 마이그레이션/CSV 처리 단위 테스트를 실행합니다. `better-sqlite3`가 Electron용 ABI로 빌드되어 있어 로드 오류가 나는 경우 `npm rebuild better-sqlite3` 후 다시 실행하세요.
+
 ### 데이터 저장 위치
 
 로컬 SQLite 데이터베이스는 Electron의 `userData` 경로(예: macOS `~/Library/Application Support/HerbStockManager`)에 저장됩니다.
@@ -45,6 +53,20 @@ npm start
 ### 클라우드 동기화 설정 (선택)
 
 앱 내 설정 화면에서 Supabase Project URL과 Anon Key를 입력하면 자동으로 초기 동기화와 실시간 구독이 시작됩니다. 값을 비워두면 로컬 단독(SQLite-only) 모드로 동작합니다.
+
+서버 스키마(테이블/트리거/실시간 구독)는 프로젝트에 포함된 `supabase_triggers.sql`을 Supabase SQL Editor에서 실행해 준비합니다. 이 스크립트는 빈 데이터베이스와 기존 데이터베이스 모두에서 안전하게 재실행할 수 있도록(idempotent) 작성되어 있습니다.
+
+## v1.7.0 업그레이드 안내 (중요)
+
+v1.7.0부터 모든 데이터의 내부 식별자(ID)가 정수에서 **UUID**로 바뀌었습니다. 사용자가 알아야 할 사항:
+
+1. **로컬 데이터는 자동 변환됩니다.** v1.7.0을 처음 실행하면 기존 SQLite 데이터베이스가 자동으로 UUID 스키마로 마이그레이션됩니다. 별도 조작은 필요 없지만, 만약을 위해 업데이트 전에 CSV 내보내기로 백업해 두는 것을 권장합니다.
+2. **Supabase를 사용 중이라면 `supabase_triggers.sql`을 반드시 다시 실행해야 합니다.** Supabase SQL Editor에서 최신 스크립트를 실행하면 서버 데이터도 같은 규칙으로 UUID로 변환됩니다. 로컬과 서버가 각각 변환되어도 같은 데이터는 같은 UUID를 갖도록 설계되어 있어 동기화가 그대로 이어집니다. 서버 스크립트를 실행하기 전까지는 클라우드 동기화가 실패할 수 있습니다(로컬 사용은 정상).
+3. **여러 PC에서 사용하는 경우 모든 PC를 v1.7.0으로 함께 업데이트하세요.** 구버전(정수 ID)과 신버전(UUID)이 같은 Supabase 서버에 섞여 접속하면 동기화가 실패합니다.
+4. 처방 이력과 프리셋 목록에서 내부 번호(`처방 ID`/`프리셋 ID`) 컬럼이 사라졌습니다. UUID는 사람이 읽는 값이 아니므로 처방명/환자명/일시로 목록을 식별합니다.
+5. UUID 전환으로, 여러 PC가 오프라인 상태에서 동시에 약재/처방을 등록해도 더 이상 서로의 데이터를 덮어쓰지 않습니다.
+
+이 밖에 v1.7.0은 보안 강화(입력값 HTML 이스케이프, CSP 적용, CSV 수식 인젝션 방어), 동기화 정합성 수정(시간대 비교 버그, 삭제된 프리셋 부활 버그, 동기화 실패 이력 보존), 재고 보정/복원 정확도 개선을 포함합니다. 상세 내역은 [CHANGELOG.md](CHANGELOG.md)를 참고하세요.
 
 ## 빌드 및 배포
 
@@ -70,9 +92,11 @@ src/
 │   └── CSVHandler.js        # CSV 가져오기/내보내기
 └── frontend/
     ├── index.html / renderer.js / style.css  # 메인 UI 및 렌더러 로직
-    ├── splash.html           # 기동 시 업데이트 체크 스플래시 화면
+    ├── splash.html / splash.js   # 기동 시 업데이트 체크 스플래시 화면
     ├── QuickSearchEngine.js  # 키보드 내비게이션 / 초성 검색 엔진
     └── svg/                  # 아이콘 리소스
+tests/                        # node:test 단위 테스트 (npm test)
+supabase_triggers.sql         # Supabase 스키마/트리거/마이그레이션 스크립트 (SQL Editor에서 실행)
 ```
 
 ## 기여

@@ -25,7 +25,7 @@ class QuickSearchEngine {
       onInquiryMed: callbacks.onInquiryMed,             // 조회 탭 엔터 콜백
       onAddToBatch: callbacks.onAddToBatch,             // 일괄 작업 탭 엔터 콜백
       onEditMed: callbacks.onEditMed,                   // 약재 정보 수정 모달 콜백
-      onSelectionChange: callbacks.onSelectionChange    // 다중 선택 상태 변경 콜백 (전달되는 인자는 Set<number> 타입입니다)
+      onSelectionChange: callbacks.onSelectionChange    // 다중 선택 상태 변경 콜백 (전달되는 인자는 Set<string> 타입 — 약재 UUID)
     };
 
     // 포커스 상태: 'search' | 'category' | 'list' | 'popup'
@@ -230,7 +230,7 @@ class QuickSearchEngine {
           }
 
           const selectedItem = items[targetIndex];
-          const medicineId = parseInt(selectedItem.dataset.id);
+          const medicineId = selectedItem.dataset.id;
           if (this.callbacks.onEditMed) {
             this.callbacks.onEditMed(medicineId);
           }
@@ -362,7 +362,7 @@ class QuickSearchEngine {
         this.selectedIds.clear();
         const activeItem = items[this.currentListIndex];
         if (activeItem) {
-          this.selectedIds.add(parseInt(activeItem.dataset.id));
+          this.selectedIds.add(activeItem.dataset.id);
         }
         this.lastSelectedIndex = this.currentListIndex;
         this.callbacks.onSelectionChange(this.selectedIds);
@@ -383,7 +383,7 @@ class QuickSearchEngine {
           this.selectedIds.clear();
           const activeItem = items[this.currentListIndex];
           if (activeItem) {
-            this.selectedIds.add(parseInt(activeItem.dataset.id));
+            this.selectedIds.add(activeItem.dataset.id);
           }
           this.lastSelectedIndex = this.currentListIndex;
           this.callbacks.onSelectionChange(this.selectedIds);
@@ -395,7 +395,7 @@ class QuickSearchEngine {
       e.preventDefault();
       if (this.currentListIndex >= 0 && this.currentListIndex < items.length) {
         const selectedItem = items[this.currentListIndex];
-        const medicineId = parseInt(selectedItem.dataset.id);
+        const medicineId = selectedItem.dataset.id;
         
         // 메인 탭바 활성화 상태(this.activeTab)에 따라 분기
         if (this.activeTab === 0) {
@@ -459,7 +459,7 @@ class QuickSearchEngine {
     this.selectedIds.clear();
     for (let i = min; i <= max; i++) {
       if (items[i]) {
-        this.selectedIds.add(parseInt(items[i].dataset.id));
+        this.selectedIds.add(items[i].dataset.id);
       }
     }
     this.callbacks.onSelectionChange(this.selectedIds);
@@ -483,7 +483,7 @@ class QuickSearchEngine {
     } else {
       // 단일 선택
       this.selectedIds.clear();
-      this.selectedIds.add(parseInt(clickedItem.dataset.id));
+      this.selectedIds.add(clickedItem.dataset.id);
       this.lastSelectedIndex = clickIdx;
       this.callbacks.onSelectionChange(this.selectedIds);
     }
@@ -504,7 +504,7 @@ class QuickSearchEngine {
         return;
       }
       
-      const medicineId = parseInt(this.elements.popupContainer.dataset.medicineId);
+      const medicineId = this.elements.popupContainer.dataset.medicineId;
       this.callbacks.onAddToPrescription(medicineId, val);
       
       this.closeQuantityPopup();
@@ -596,7 +596,7 @@ class QuickSearchEngine {
 
     // 복수 선택 및 단일 선택된 아이템들 비주얼 적용
     items.forEach(item => {
-      const id = parseInt(item.dataset.id);
+      const id = item.dataset.id;
       if (this.selectedIds.has(id)) {
         item.classList.add('active', 'multi-selected');
       } else {
