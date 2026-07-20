@@ -64,7 +64,14 @@ class QuickSearchEngine {
     // 팝업 열렸을 때 input 포커스 아웃 방어
     this.elements.popupInput.addEventListener('blur', () => {
       if (this.state === 'popup') {
-        setTimeout(() => this.elements.popupInput.focus(), 10);
+        // 예약 시점과 실행 시점 사이에 팝업이 닫힐 수 있으므로 실행 시점에 상태를 재검사
+        // (닫힌 팝업은 opacity:0이라 focus()가 성공해 보이지 않는 input이 포커스를 훔치게 됨)
+        // 공용 대화상자(.modal-overlay.show)가 팝업 위에 떠 있는 동안에도 포커스를 빼앗지 않음
+        setTimeout(() => {
+          if (this.state === 'popup' && !document.querySelector('.modal-overlay.show')) {
+            this.elements.popupInput.focus();
+          }
+        }, 10);
       }
     });
 
@@ -499,8 +506,10 @@ class QuickSearchEngine {
       e.preventDefault();
       const val = parseFloat(this.elements.popupInput.value);
       if (isNaN(val) || val <= 0) {
-        alert('올바른 소모 g수를 입력해 주세요.');
-        this.elements.popupInput.select();
+        // 네이티브 alert는 닫힌 뒤 렌더러 포커스가 유실되는 Electron 버그가 있어 공용 대화상자 사용
+        window.showAlert('올바른 소모 g수를 입력해 주세요.').then(() => {
+          this.elements.popupInput.select();
+        });
         return;
       }
       
@@ -630,6 +639,11 @@ class QuickSearchEngine {
 
   closeQuantityPopup() {
     this.elements.popupContainer.classList.remove('show');
+    // blur 이벤트가 동기적으로 발화하므로, 'popup' 상태인 채로 blur하면
+    // 위 blur 방어 로직이 숨겨진 input으로 재포커스를 예약해 버림 — 상태를 먼저 해제
+    if (this.state === 'popup') {
+      this.state = 'list';
+    }
     this.elements.popupInput.blur();
   }
 

@@ -794,6 +794,16 @@ body {
   margin-top: 22px; /* 버튼 상단 마진 추가 */
 }
 
+/* 공용 알림/확인 대화상자 메시지 본문 */
+.app-dialog-message {
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--color-text-main);
+  white-space: pre-line; /* 기존 alert/confirm 메시지의 \n 줄바꿈 유지 */
+  word-break: keep-all;
+  overflow-wrap: break-word;
+}
+
 /* ----------------------------------------------------
    16. Custom Context Menu
    ---------------------------------------------------- */

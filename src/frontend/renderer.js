@@ -57,6 +57,94 @@ let contextTargetPresetId = null; // 우클릭 대상 프리셋 ID
 let currentPrescMode = 'prescription'; // 'prescription' | 'preset'
 let currentHistoryTab = 'history'; // 'history' | 'presets'
 
+// ----------------------------------------------------
+// 공용 알림/확인 대화상자 (window.alert / confirm 대체)
+// Electron에서 네이티브 alert/confirm은 닫힌 뒤 렌더러가 키보드 포커스를
+// 되찾지 못하는 버그(캐럿 소실, 입력 무반응)가 있어 앱 내 DOM 모달로 대체합니다.
+// ----------------------------------------------------
+
+// 대화상자가 겹쳐 호출되는 상황을 방지하기 위한 순차 실행 체인
+let appDialogChain = Promise.resolve();
+
+function openAppDialog({ message, title, isConfirm }) {
+  const run = () => new Promise((resolve) => {
+    const overlay = document.getElementById('appDialogModal');
+    const okBtn = document.getElementById('btnAppDialogOk');
+    const cancelBtn = document.getElementById('btnAppDialogCancel');
+
+    document.getElementById('appDialogTitle').textContent = title || (isConfirm ? '확인' : '알림');
+    document.getElementById('appDialogMessage').textContent = message;
+    cancelBtn.style.display = isConfirm ? '' : 'none';
+
+    const prevFocused = document.activeElement;
+
+    const close = (result) => {
+      overlay.classList.remove('show');
+      okBtn.removeEventListener('click', onOk);
+      cancelBtn.removeEventListener('click', onCancel);
+      document.removeEventListener('keydown', onKeyDown, true);
+
+      // 대화상자를 열기 전 포커스 위치 복원 (닫힌 뒤 입력 흐름이 끊기지 않도록)
+      if (prevFocused && prevFocused !== document.body && document.contains(prevFocused) && typeof prevFocused.focus === 'function') {
+        prevFocused.focus();
+      } else if (searchEngine && searchEngine.state === 'search' && !document.querySelector('.modal-overlay.show, .popup-overlay.show')) {
+        searchEngine.setFocusState('search');
+      }
+      resolve(result);
+    };
+
+    const onOk = () => close(true);
+    const onCancel = () => close(false);
+
+    // 다른 모달 위에 겹쳐 뜰 수 있으므로 캡처 단계에서 가로채,
+    // 전역 모달 키 핸들러(Enter 저장 / Esc 닫기 / Tab 트랩)가 아래쪽 모달에 반응하지 않게 함
+    const onKeyDown = (e) => {
+      if (e.isComposing) return;
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        e.stopPropagation();
+        // Tab/방향키로 취소 버튼에 포커스를 둔 상태의 Enter는 취소로 처리
+        close(document.activeElement !== cancelBtn);
+      } else if (e.key === 'Escape') {
+        e.preventDefault();
+        e.stopPropagation();
+        close(false);
+      } else if (['Tab', 'ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(e.key)) {
+        e.preventDefault();
+        e.stopPropagation();
+        if (isConfirm) {
+          (document.activeElement === okBtn ? cancelBtn : okBtn).focus();
+        }
+      }
+    };
+
+    okBtn.addEventListener('click', onOk);
+    cancelBtn.addEventListener('click', onCancel);
+    document.addEventListener('keydown', onKeyDown, true);
+
+    overlay.classList.add('show');
+    okBtn.focus();
+  });
+
+  const request = appDialogChain.then(run);
+  appDialogChain = request.then(() => {}, () => {});
+  return request;
+}
+
+/** 네이티브 alert() 대체. 확인 버튼을 누를 때까지 대기하는 Promise<void> 반환 */
+function showAlert(message, title) {
+  return openAppDialog({ message, title, isConfirm: false }).then(() => {});
+}
+
+/** 네이티브 confirm() 대체. 확인 시 true, 취소/Esc 시 false로 resolve되는 Promise<boolean> 반환 */
+function showConfirm(message, title) {
+  return openAppDialog({ message, title, isConfirm: true });
+}
+
+// QuickSearchEngine 등 다른 스크립트에서도 사용할 수 있도록 전역 노출
+window.showAlert = showAlert;
+window.showConfirm = showConfirm;
+
 /**
  * UTC 기반의 시간 문자열(예: 'YYYY-MM-DD HH:mm:ss' 또는 ISO 8601 형식)을
  * 한국 시간대(KST, UTC+9)의 Date 객체로 변환합니다.
@@ -673,9 +761,9 @@ function openPrescriptionDetailModal(prescId) {
       statusEl.style.color = '#e67e22';
       deductBtn.style.display = 'inline-block';
       
-      deductBtn.onclick = () => {
+      deductBtn.onclick = async () => {
         const prescNameDisplay = detail.prescription_name || '(이름 없음)';
-        if (confirm(`"${prescNameDisplay}" 처방의 약재 재고 차감을 실행하시겠습니까?\n이 작업은 되돌릴 수 없으며 중복 실행할 수 없습니다.`)) {
+        if (await showConfirm(`"${prescNameDisplay}" 처방의 약재 재고 차감을 실행하시겠습니까?\n이 작업은 되돌릴 수 없으며 중복 실행할 수 없습니다.`)) {
           try {
             dbManager.deductPrescriptionStock(prescId);
             showToast('🎉 재고 차감이 성공적으로 완료되었습니다.');
@@ -685,7 +773,7 @@ function openPrescriptionDetailModal(prescId) {
             renderPredictView();
             renderNotifications();
           } catch (err) {
-            alert(`재고 차감 실패: ${err.message}`);
+            showAlert(`재고 차감 실패: ${err.message}`);
           }
         }
       };
@@ -705,7 +793,7 @@ function openPrescriptionDetailModal(prescId) {
 
     document.getElementById('prescriptionDetailModal').classList.add('show');
   } catch (err) {
-    alert(`처방전 상세정보를 불러오지 못했습니다: ${err.message}`);
+    showAlert(`처방전 상세정보를 불러오지 못했습니다: ${err.message}`);
   }
 }
 
@@ -870,11 +958,11 @@ function saveBatchChanges() {
       const opened_pack_remain = parseFloat(row.querySelector('.batch-remain').value) || 0;
 
       if (isNaN(pack_size) || pack_size <= 0) {
-        alert(`"${row.cells[0].textContent}"의 팩 규격은 0보다 커야 합니다.`);
+        showAlert(`"${row.cells[0].textContent}"의 팩 규격은 0보다 커야 합니다.`);
         return;
       }
       if (opened_pack_remain > pack_size) {
-        alert(`"${row.cells[0].textContent}"의 개봉 잔량은 팩 규격을 초과할 수 없습니다.`);
+        showAlert(`"${row.cells[0].textContent}"의 개봉 잔량은 팩 규격을 초과할 수 없습니다.`);
         return;
       }
     }
@@ -920,7 +1008,7 @@ function saveBatchChanges() {
       successCount++;
     } catch (err) {
       console.error(err);
-      alert(`"${row.cells[0].textContent}" 저장 중 에러 발생: ${err.message}`);
+      showAlert(`"${row.cells[0].textContent}" 저장 중 에러 발생: ${err.message}`);
       hasError = true;
       break;
     }
@@ -941,7 +1029,7 @@ function handleAddCategorySave() {
   const input = document.getElementById('newCategoryName');
   const name = input.value.trim();
   if (!name) {
-    alert('카테고리명을 입력해 주세요.');
+    showAlert('카테고리명을 입력해 주세요.');
     return;
   }
 
@@ -964,7 +1052,7 @@ function handleAddCategorySave() {
 
     renderMedicineList();
   } catch (err) {
-    alert(`카테고리 등록 실패: ${err.message}`);
+    showAlert(`카테고리 등록 실패: ${err.message}`);
   }
 }
 
@@ -974,7 +1062,7 @@ function handleEditCategorySave() {
   const name = input.value.trim();
 
   if (!name) {
-    alert('카테고리명을 입력해 주세요.');
+    showAlert('카테고리명을 입력해 주세요.');
     return;
   }
   if (!idStr) return;
@@ -999,7 +1087,7 @@ function handleEditCategorySave() {
 
     renderMedicineList();
   } catch (err) {
-    alert(`카테고리 수정 실패: ${err.message}`);
+    showAlert(`카테고리 수정 실패: ${err.message}`);
   }
 }
 
@@ -1093,7 +1181,7 @@ function handleEditMedSave() {
   let unit = document.getElementById('editMedUnit').value.trim() || 'g';
 
   if (!name) {
-    alert('약재명을 입력해 주세요.');
+    showAlert('약재명을 입력해 주세요.');
     return;
   }
 
@@ -1106,11 +1194,11 @@ function handleEditMedSave() {
     unit = 'g';
   } else {
     if (isNaN(packSize) || packSize <= 0) {
-      alert('팩 규격을 올바르게 입력해 주세요.');
+      showAlert('팩 규격을 올바르게 입력해 주세요.');
       return;
     }
     if (remain > packSize) {
-      alert(`개봉 잔량(${remain}g)은 팩 규격(${packSize}g)을 초과할 수 없습니다.`);
+      showAlert(`개봉 잔량(${remain}g)은 팩 규격(${packSize}g)을 초과할 수 없습니다.`);
       return;
     }
   }
@@ -1162,7 +1250,7 @@ function handleEditMedSave() {
       searchEngine.setFocusState('search');
     }
   } catch (err) {
-    alert(`저장 실패: ${err.message}`);
+    showAlert(`저장 실패: ${err.message}`);
   }
 }
 
@@ -1747,7 +1835,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
       renderPrescription();
     } catch (err) {
-      alert(`처방 데이터를 불러오지 못했습니다: ${err.message}`);
+      showAlert(`처방 데이터를 불러오지 못했습니다: ${err.message}`);
     }
   }
 
@@ -1823,7 +1911,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
       renderPrescription();
     } catch (err) {
-      alert(`프리셋 데이터를 불러오지 못했습니다: ${err.message}`);
+      showAlert(`프리셋 데이터를 불러오지 못했습니다: ${err.message}`);
     }
   }
 
@@ -2019,10 +2107,10 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   });
 
-  document.getElementById('ctxMenuDelete').addEventListener('click', () => {
+  document.getElementById('ctxMenuDelete').addEventListener('click', async () => {
     if (contextTargetMedId !== null) {
       const med = dbManager.getAllMedicines().find(m => m.id === contextTargetMedId);
-      if (confirm(`⚠️ 정말로 "${med.name}" 약재를 삭제하시겠습니까? 관련 입출고 로그, 처방 내역 및 프리셋 구성 정보가 모두 영구 유실됩니다.`)) {
+      if (await showConfirm(`⚠️ 정말로 "${med.name}" 약재를 삭제하시겠습니까? 관련 입출고 로그, 처방 내역 및 프리셋 구성 정보가 모두 영구 유실됩니다.`)) {
         try {
           dbManager.deleteMedicine(contextTargetMedId);
         } catch (err) {
@@ -2056,7 +2144,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   });
 
-  document.getElementById('ctxPrescDeduct').addEventListener('click', () => {
+  document.getElementById('ctxPrescDeduct').addEventListener('click', async () => {
     if (contextTargetPrescId !== null) {
       const detail = dbManager.getPrescriptionDetails(contextTargetPrescId);
       if (detail.is_deducted === 1) {
@@ -2064,7 +2152,7 @@ document.addEventListener('DOMContentLoaded', () => {
         contextTargetPrescId = null;
         return;
       }
-      if (confirm(`"${detail.prescription_name}" 처방의 약재 재고 차감을 실행하시겠습니까?\n이 작업은 되돌릴 수 없으며 중복 실행할 수 없습니다.`)) {
+      if (await showConfirm(`"${detail.prescription_name}" 처방의 약재 재고 차감을 실행하시겠습니까?\n이 작업은 되돌릴 수 없으며 중복 실행할 수 없습니다.`)) {
         try {
           dbManager.deductPrescriptionStock(contextTargetPrescId);
           showToast('🎉 재고 차감이 성공적으로 완료되었습니다.');
@@ -2073,17 +2161,17 @@ document.addEventListener('DOMContentLoaded', () => {
           renderPredictView();
           renderNotifications();
         } catch (err) {
-          alert(`재고 차감 실패: ${err.message}`);
+          showAlert(`재고 차감 실패: ${err.message}`);
         }
       }
       contextTargetPrescId = null;
     }
   });
 
-  document.getElementById('ctxPrescDelete').addEventListener('click', () => {
+  document.getElementById('ctxPrescDelete').addEventListener('click', async () => {
     if (contextTargetPrescId !== null) {
       const detail = dbManager.getPrescriptionDetails(contextTargetPrescId);
-      if (confirm(`⚠️ 정말로 처방전 (${detail.prescription_name || '(이름 없음)'} - ${detail.patient_name})을 삭제하시겠습니까? 소모된 약재 재고가 모두 자동으로 복원됩니다.`)) {
+      if (await showConfirm(`⚠️ 정말로 처방전 (${detail.prescription_name || '(이름 없음)'} - ${detail.patient_name})을 삭제하시겠습니까? 소모된 약재 재고가 모두 자동으로 복원됩니다.`)) {
         try {
           dbManager.deletePrescription(contextTargetPrescId);
           showToast(`🗑️ 처방 내역이 삭제되고 재고가 복원되었습니다.`, true);
@@ -2096,7 +2184,7 @@ document.addEventListener('DOMContentLoaded', () => {
           renderMedicineList();
           renderPredictView();
         } catch (err) {
-          alert(`처방 삭제 실패: ${err.message}`);
+          showAlert(`처방 삭제 실패: ${err.message}`);
         }
       }
       contextTargetPrescId = null;
@@ -2120,11 +2208,11 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   });
 
-  document.getElementById('ctxCategoryDelete').addEventListener('click', () => {
+  document.getElementById('ctxCategoryDelete').addEventListener('click', async () => {
     if (contextTargetCategoryId !== null) {
       const cat = dbManager.getAllCategories().find(c => c.id === contextTargetCategoryId);
       if (cat) {
-        if (confirm(`⚠️ 정말로 "${cat.name}" 카테고리를 삭제하시겠습니까?\n카테고리가 삭제되면 이 카테고리에 속한 약재들은 모두 '미분류' 카테고리로 이동됩니다.`)) {
+        if (await showConfirm(`⚠️ 정말로 "${cat.name}" 카테고리를 삭제하시겠습니까?\n카테고리가 삭제되면 이 카테고리에 속한 약재들은 모두 '미분류' 카테고리로 이동됩니다.`)) {
           try {
             dbManager.deleteCategory(contextTargetCategoryId);
             showToast(`🗑️ "${cat.name}" 카테고리가 삭제되었습니다.`, true);
@@ -2137,7 +2225,7 @@ document.addEventListener('DOMContentLoaded', () => {
             });
             renderMedicineList();
           } catch (err) {
-            alert(`카테고리 삭제 실패: ${err.message}`);
+            showAlert(`카테고리 삭제 실패: ${err.message}`);
           }
         }
       }
@@ -2155,11 +2243,11 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   });
 
-  document.getElementById('ctxPresetDelete').addEventListener('click', () => {
+  document.getElementById('ctxPresetDelete').addEventListener('click', async () => {
     if (contextTargetPresetId !== null) {
       const id = contextTargetPresetId;
       const preset = dbManager.getAllPresets().find(pr => String(pr.id) === String(id));
-      if (confirm(`⚠️ 정말로 "${preset.preset_name}" 프리셋을 삭제하시겠습니까?`)) {
+      if (await showConfirm(`⚠️ 정말로 "${preset.preset_name}" 프리셋을 삭제하시겠습니까?`)) {
         try {
           dbManager.deletePreset(id);
           showToast('🗑️ 프리셋이 삭제되었습니다.', true);
@@ -2173,7 +2261,7 @@ document.addEventListener('DOMContentLoaded', () => {
             renderPresetListModal();
           }
         } catch (err) {
-          alert(`프리셋 삭제 실패: ${err.message}`);
+          showAlert(`프리셋 삭제 실패: ${err.message}`);
         }
       }
       contextTargetPresetId = null;
@@ -2216,11 +2304,11 @@ document.addEventListener('DOMContentLoaded', () => {
     const prescNote = document.getElementById('prescriptionNote').value.trim();
 
     if (!patName) {
-      alert('환자명을 입력해 주세요.');
+      showAlert('환자명을 입력해 주세요.');
       return;
     }
     if (currentPrescriptionItems.length === 0) {
-      alert('처방전에 추가된 약재가 없습니다.');
+      showAlert('처방전에 추가된 약재가 없습니다.');
       return;
     }
 
@@ -2258,7 +2346,7 @@ document.addEventListener('DOMContentLoaded', () => {
       renderPredictView(); // 발주 예측도 실시간 업데이트
       renderNotifications(); // 알림 배지 및 리스트 동적 갱신
     } catch (err) {
-      alert(`조제 처리 실패: ${err.message}`);
+      showAlert(`조제 처리 실패: ${err.message}`);
       showToast('재고 부족 등으로 조제 실패', true);
     }
   }
@@ -2287,11 +2375,11 @@ document.addEventListener('DOMContentLoaded', () => {
     const note = document.getElementById('prescriptionNote').value.trim();
 
     if (!presetName) {
-      alert('프리셋 처방명을 입력해 주세요.');
+      showAlert('프리셋 처방명을 입력해 주세요.');
       return;
     }
     if (currentPrescriptionItems.length === 0) {
-      alert('프리셋에 추가할 약재가 없습니다.');
+      showAlert('프리셋에 추가할 약재가 없습니다.');
       return;
     }
 
@@ -2315,7 +2403,7 @@ document.addEventListener('DOMContentLoaded', () => {
         renderPresetsHistoryList();
       }
     } catch (err) {
-      alert(`프리셋 저장 실패: ${err.message}`);
+      showAlert(`프리셋 저장 실패: ${err.message}`);
     }
   });
 
@@ -2379,10 +2467,10 @@ document.addEventListener('DOMContentLoaded', () => {
     
     // 삭제 이벤트 연결
     tbody.querySelectorAll('.btn-delete-preset').forEach(btn => {
-      btn.addEventListener('click', () => {
+      btn.addEventListener('click', async () => {
         const id = btn.getAttribute('data-id');
         const preset = presets.find(p => String(p.id) === String(id));
-        if (confirm(`"${preset.preset_name}" 프리셋을 삭제하시겠습니까?`)) {
+        if (await showConfirm(`"${preset.preset_name}" 프리셋을 삭제하시겠습니까?`)) {
           try {
             dbManager.deletePreset(id);
             showToast('프리셋이 삭제되었습니다.');
@@ -2391,16 +2479,16 @@ document.addEventListener('DOMContentLoaded', () => {
               renderPresetsHistoryList();
             }
           } catch (err) {
-            alert(`프리셋 삭제 실패: ${err.message}`);
+            showAlert(`프리셋 삭제 실패: ${err.message}`);
           }
         }
       });
     });
   }
 
-  function loadPresetToBasket(presetId) {
+  async function loadPresetToBasket(presetId) {
     if (currentPrescriptionItems.length > 0) {
-      if (!confirm('현재 작성 중인 처방전 약재 목록을 지우고 프리셋을 불러오시겠습니까?')) {
+      if (!(await showConfirm('현재 작성 중인 처방전 약재 목록을 지우고 프리셋을 불러오시겠습니까?'))) {
         return;
       }
     }
@@ -2426,7 +2514,7 @@ document.addEventListener('DOMContentLoaded', () => {
       document.getElementById('presetLoadModal').classList.remove('show');
       showToast(`⭐ "${detail.preset_name}" 프리셋을 적용했습니다.`);
     } catch (err) {
-      alert(`프리셋 로드 실패: ${err.message}`);
+      showAlert(`프리셋 로드 실패: ${err.message}`);
     }
   }
 
@@ -2547,11 +2635,11 @@ document.addEventListener('DOMContentLoaded', () => {
     
     // 삭제 버튼 바인딩
     tbody.querySelectorAll('.btn-delete-preset-hist').forEach(btn => {
-      btn.addEventListener('click', (e) => {
+      btn.addEventListener('click', async (e) => {
         e.stopPropagation();
         const id = btn.getAttribute('data-id');
         const preset = presets.find(pr => String(pr.id) === String(id));
-        if (confirm(`"${preset.preset_name}" 프리셋을 삭제하시겠습니까?`)) {
+        if (await showConfirm(`"${preset.preset_name}" 프리셋을 삭제하시겠습니까?`)) {
           try {
             dbManager.deletePreset(id);
             showToast('프리셋이 삭제되었습니다.');
@@ -2561,7 +2649,7 @@ document.addEventListener('DOMContentLoaded', () => {
               renderPresetListModal();
             }
           } catch (err) {
-            alert(`프리셋 삭제 실패: ${err.message}`);
+            showAlert(`프리셋 삭제 실패: ${err.message}`);
           }
         }
       });
@@ -2596,7 +2684,7 @@ document.addEventListener('DOMContentLoaded', () => {
       
       document.getElementById('presetDetailModal').classList.add('show');
     } catch (err) {
-      alert(`프리셋 데이터를 불러오지 못했습니다: ${err.message}`);
+      showAlert(`프리셋 데이터를 불러오지 못했습니다: ${err.message}`);
     }
   }
 
@@ -2619,7 +2707,7 @@ document.addEventListener('DOMContentLoaded', () => {
       renderPredictView();
       renderMedicineList();
     } catch (err) {
-      alert(`갱신 실패: ${err.message}`);
+      showAlert(`갱신 실패: ${err.message}`);
     }
   });
 
@@ -2662,7 +2750,7 @@ document.addEventListener('DOMContentLoaded', () => {
           text = eucKrDecoder.decode(arrayBuffer);
         } catch (eucErr) {
           console.error('EUC-KR 디코딩 실패:', eucErr);
-          alert('파일 인코딩을 해석할 수 없습니다. UTF-8 또는 EUC-KR 형식이어야 합니다.');
+          showAlert('파일 인코딩을 해석할 수 없습니다. UTF-8 또는 EUC-KR 형식이어야 합니다.');
           return;
         }
       }
@@ -2680,7 +2768,7 @@ document.addEventListener('DOMContentLoaded', () => {
         renderMedicineList();
         renderPredictView();
       } catch (err) {
-        alert(`CSV 파싱 실패: ${err.message}`);
+        showAlert(`CSV 파싱 실패: ${err.message}`);
       }
       e.target.value = '';
     };
@@ -2702,7 +2790,7 @@ document.addEventListener('DOMContentLoaded', () => {
         document.body.removeChild(link);
         showToast('📤 CSV 파일로 재고 정보가 내보내졌습니다.');
       } catch (err) {
-        alert(`CSV 내보내기 실패: ${err.message}`);
+        showAlert(`CSV 내보내기 실패: ${err.message}`);
       }
     });
   });
@@ -3058,7 +3146,7 @@ window.openNotificationAdjustModal = function(e, notiId, medId) {
   const med = dbManager.getAllMedicines().find(m => String(m.id) === String(medId));
 
   if (!med) {
-    alert('해당 약재를 찾을 수 없습니다.');
+    showAlert('해당 약재를 찾을 수 없습니다.');
     return;
   }
 
@@ -3082,7 +3170,7 @@ window.readNotification = function(e, notiId) {
     dbManager.markNotificationAsRead(notiId);
     renderNotifications();
   } catch (err) {
-    alert(`알림 업데이트 실패: ${err.message}`);
+    showAlert(`알림 업데이트 실패: ${err.message}`);
   }
 };
 
@@ -3092,7 +3180,7 @@ window.deleteNotification = function(e, notiId) {
     dbManager.deleteNotification(notiId);
     renderNotifications();
   } catch (err) {
-    alert(`알림 삭제 실패: ${err.message}`);
+    showAlert(`알림 삭제 실패: ${err.message}`);
   }
 };
 
@@ -3168,7 +3256,7 @@ function initNotificationEvents() {
       const remain = parseFloat(document.getElementById('adjNotificationRemain').value) || 0;
 
       if (packs < 0 || remain < 0) {
-        alert('팩 개수 및 잔량은 0보다 작을 수 없습니다.');
+        showAlert('팩 개수 및 잔량은 0보다 작을 수 없습니다.');
         return;
       }
 
@@ -3184,7 +3272,7 @@ function initNotificationEvents() {
         renderPastPrescriptions();
         renderPredictView();
       } catch (err) {
-        alert(`잔량 보정 실패: ${err.message}`);
+        showAlert(`잔량 보정 실패: ${err.message}`);
       }
     });
   }

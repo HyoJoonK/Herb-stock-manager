@@ -767,6 +767,18 @@
     </div>
   </div>
 
+  <!-- 공용 알림/확인 대화상자 (네이티브 alert/confirm 대체) -->
+  <div class="modal-overlay" id="appDialogModal">
+    <div class="modal-content" style="width: 360px;">
+      <div class="modal-header" id="appDialogTitle">알림</div>
+      <div class="app-dialog-message" id="appDialogMessage"></div>
+      <div class="modal-actions">
+        <button class="btn" id="btnAppDialogCancel">취소</button>
+        <button class="btn btn-primary" id="btnAppDialogOk">확인</button>
+      </div>
+    </div>
+  </div>
+
   <!-- 우클릭 퀵 컨텍스트 메뉴 -->
   <div class="context-menu" id="medContextMenu">
     <div class="context-menu-item" id="ctxMenuEdit"><span class="sf-icon sf-icon-pencil"></span> 약재 수정</div>
