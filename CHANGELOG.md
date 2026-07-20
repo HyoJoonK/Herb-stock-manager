@@ -2,6 +2,15 @@
 
 이 프로젝트의 주요 변경 사항을 버전별로 기록합니다. 형식은 [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/)를 참고하며, 버전 관리는 [Semantic Versioning](https://semver.org/lang/ko/)을 따릅니다.
 
+## [1.7.1] - 2026-07-21
+
+### Fixed
+
+- **네이티브 `alert`/`confirm` 대화상자로 인한 키보드 입력 먹통 버그 수정** (`src/frontend/renderer.js`, `src/frontend/QuickSearchEngine.js`, `src/frontend/index.html`, `src/frontend/style.css`)
+  - Electron은 네이티브 `alert()`/`confirm()`을 닫은 뒤 렌더러가 키보드 포커스를 되찾지 못하는 알려진 버그가 있어, 대화상자를 한 번이라도 띄운 직후 검색창을 포함한 모든 입력 요소에서 캐럿이 사라지고 타이핑이 반영되지 않는 현상(윈도우/맥 공통)이 간헐적으로 발생했습니다.
+  - 코드 전반의 `alert`/`confirm` 호출 47곳을 기존 모달 스타일을 재사용한 공용 대화상자(`showAlert`/`showConfirm`)로 교체했습니다. 대화상자를 열기 전 포커스 위치를 기억했다가 닫힐 때 그대로 복원하며, Enter(확인)·Esc(취소)·Tab/방향키(확인·취소 전환) 등 기존 키보드 워크플로우를 그대로 유지합니다.
+  - 처방 조제 g수 입력 팝업을 **Esc로 닫을 때**, 팝업의 blur 방어 로직(10ms 지연 재포커스)이 상태 전환 순서 문제로 인해 이미 닫혀 투명해진(`opacity:0`) input에 포커스를 되돌려 놓아 같은 증상(캐럿 소실, 입력 무반응)을 유발하던 레이스 컨디션도 함께 수정했습니다.
+
 ## [1.7.0] - 2026-07-21
 
 코드 리뷰(2026-07-21)에서 발견된 이슈들을 일괄 수정한 보안/정합성 중심 릴리스입니다. 각 항목은 리뷰 이슈 번호(#N) 기준으로 분리해 기록합니다.
