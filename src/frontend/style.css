@@ -541,6 +541,32 @@ body {
   z-index: 10;
 }
 
+/* 처방 이력/프리셋 테이블 컬럼 간격 조정
+   (처방명↔환자명 중간 / 약재수 살짝 좁게 / 일시 넓게 / 상태·작업 중간) */
+#pastPrescriptionsWrapper .presc-table th:nth-child(3),
+#pastPrescriptionsWrapper .presc-table td:nth-child(3),
+#presetsHistoryWrapper .presc-table th:nth-child(3),
+#presetsHistoryWrapper .presc-table td:nth-child(3) {
+  padding-left: 8px;
+  padding-right: 8px;
+  text-align: center;
+}
+
+#pastPrescriptionsWrapper .presc-table th:nth-child(4),
+#pastPrescriptionsWrapper .presc-table td:nth-child(4),
+#presetsHistoryWrapper .presc-table th:nth-child(4),
+#presetsHistoryWrapper .presc-table td:nth-child(4) {
+  padding-left: 28px;
+  padding-right: 16px;
+}
+
+#pastPrescriptionsWrapper .presc-table th:nth-child(5),
+#pastPrescriptionsWrapper .presc-table td:nth-child(5),
+#presetsHistoryWrapper .presc-table th:nth-child(5),
+#presetsHistoryWrapper .presc-table td:nth-child(5) {
+  padding-left: 14px;
+}
+
 /* ----------------------------------------------------
    11. Batch Table Input Area (일괄 작업 시트)
    ---------------------------------------------------- */

@@ -2512,9 +2512,11 @@ document.addEventListener('DOMContentLoaded', () => {
         <td style="font-style: italic; color:var(--color-text-muted); font-size:11px;">${escapeHtml(p.note || '-')}</td>
         <td style="text-align:center;">${escapeHtml(p.total_items)}종</td>
         <td style="color:var(--color-text-muted); font-size:11px;">${formatUTCToKSTString(p.created_at)}</td>
-        <td style="text-align:center; display: flex; gap: 6px; justify-content: center; align-items: center; height: 100%;">
-          <button class="btn btn-secondary btn-apply-preset-hist" data-id="${escapeHtml(p.id)}" style="padding: 2px 8px; font-size: 11px;">적용</button>
-          <button class="btn btn-primary btn-delete-preset-hist" data-id="${escapeHtml(p.id)}" style="padding: 2px 8px; font-size: 11px; background: #e74c3c; border-color: #e74c3c;">삭제</button>
+        <td style="text-align:center;">
+          <div style="display: flex; gap: 6px; justify-content: center; align-items: center;">
+            <button class="btn btn-secondary btn-apply-preset-hist" data-id="${escapeHtml(p.id)}" style="padding: 2px 8px; font-size: 11px;">적용</button>
+            <button class="btn btn-primary btn-delete-preset-hist" data-id="${escapeHtml(p.id)}" style="padding: 2px 8px; font-size: 11px; background: #e74c3c; border-color: #e74c3c;">삭제</button>
+          </div>
         </td>
       `;
       
