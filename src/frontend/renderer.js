@@ -10,7 +10,7 @@
  *  - views/                : 탭별 View (MedicineList/Inquiry/Prescription/Predict/
  *                            Batch/Notification)
  *  - components/           : 모달·컨텍스트 메뉴·차트 컴포넌트
- *  - QuickSearchEngine.js  : 키보드 내비게이션 엔진 (script 태그 전역 로드)
+ *  - QuickSearchEngine.js  : 키보드 내비게이션 엔진 (App.js가 require로 로드)
  */
 
 // 고해상도(DPI) 화면 배율에 따른 내부 콘텐츠 줌 레벨 조정 (윈도우 환경 전용)

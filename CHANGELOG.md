@@ -15,7 +15,7 @@
   - `src/backend/repositories/`: 테이블별 CRUD 전담 Repository 7종 — `BaseRepository`(공통 tombstone/타임스탬프 헬퍼), `CategoryRepository`, `MedicineRepository`, `PrescriptionRepository`, `PresetRepository`, `StockLogRepository`, `NotificationRepository`
   - `src/backend/services/`: 트랜잭션 단위 비즈니스 로직 — `StockService`(소모·팩 자동 개봉·입고 분배·폐기·복원 알고리즘), `PrescriptionService`(처방 생성·수정·삭제·후차감과 재고 롤백). 기존 `SmartPredictor`·`CSVHandler`도 이 디렉터리로 이동했습니다.
   - `src/backend/sync/`: Supabase 동기화 서브시스템 5종 — `SyncEngine`(오케스트레이터), `TableMapper`(동기화 테이블 선언의 **단일 등록 지점**), `ConflictResolver`(Last-Write-Wins 판정), `SyncQueue`(오프라인 안전 대기열·재시도·dead-letter), `RealtimeSubscriber`(실시간 수신·로컬 반영)
-  - `InventoryManager.js`는 기존 공개 API 시그니처를 100% 유지하는 420줄 Facade로 축소되었습니다. 렌더러·테스트·CSV 흐름(`manager.supabase` 일시 차단 패턴 포함)은 수정 없이 그대로 동작합니다.
+  - `InventoryManager.js`는 기존 공개 API 시그니처를 100% 유지하는 421줄 Facade로 축소되었습니다. 렌더러·테스트·CSV 흐름(`manager.supabase` 일시 차단 패턴 포함)은 수정 없이 그대로 동작합니다.
   - 효과: 과거 "동기화 테이블 추가 시 세 곳(`syncAll`/`handleRealtimeChange`/`syncItemToSupabaseDirect`)을 모두 고쳐야 하는" 산탄총 수정이 사라지고, `TableMapper`의 선언 한 곳만 갱신하면 됩니다.
 
 ### Changed (구조 — 프런트엔드)
@@ -25,11 +25,11 @@
   - `src/frontend/views/`: `BaseView` + 화면 영역별 View 6종 — `MedicineListView`(3개 탭 공용 약재 목록·카테고리 탭), `InquiryView`(상세·차트·로그), `PrescriptionView`(작성·이력·프리셋·편집 모드·패널 확장), `PredictView`(발주 예측), `BatchView`(일괄 편집), `NotificationView`(알림함)
   - `src/frontend/components/`: `MedicineModal`, `CategoryModal`, `PrescriptionDetailModal`, `SettingsModal`(Supabase 설정+업데이트 UI), `ContextMenu`, `UsageChart`
   - `App.js`: DB 초기화, `QuickSearchEngine` 콜백 연결, 탭 전환(`switchTab`), CSV 가져오기/내보내기를 조립하는 코디네이터
-  - `renderer.js`는 부트스트랩 전용 진입점(42줄)으로 축소되었고, `index.html`의 `QuickSearchEngine` script 태그를 제거하고 `require` 기반 모듈 로드로 통일했습니다.
+  - `renderer.js`는 부트스트랩 전용 진입점(39줄)으로 축소되었고, `index.html`의 `QuickSearchEngine` script 태그를 제거하고 `require` 기반 모듈 로드로 통일했습니다.
 
 ### Changed (구조 — 메인 프로세스)
 
-- **`main.js`(333줄) 분리** → `src/main/WindowManager.js`(스플래시/메인 윈도우 생성·수명·렌더러 상태 전송), `src/main/UpdateManager.js`(자동 업데이트 흐름: 기동/수동/정기 체크, 5초 타임아웃 Fallback). `main.js`는 앱 수명주기 + IPC 등록만 담당하는 74줄 진입점이 되었습니다.
+- **`main.js`(333줄) 분리** → `src/main/WindowManager.js`(스플래시/메인 윈도우 생성·수명·렌더러 상태 전송), `src/main/UpdateManager.js`(자동 업데이트 흐름: 기동/수동/정기 체크, 5초 타임아웃 Fallback). `main.js`는 앱 수명주기 + IPC 등록만 담당하는 73줄 진입점이 되었습니다.
 
 ## [1.7.2] - 2026-07-21
 
