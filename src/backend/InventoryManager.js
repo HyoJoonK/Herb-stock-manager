@@ -8,14 +8,11 @@
  *    (로컬 SQLite와 원격 Supabase가 각자 마이그레이션해도 같은 레코드가 같은 UUID를 갖도록 보장)
  */
 
-let Database;
-try {
-  Database = require('better-sqlite3');
-} catch (e) {
-  throw new Error('better-sqlite3 패키지를 로드할 수 없습니다. 프로그램 구동을 위해서는 SQLite 인프라가 필수적입니다.');
-}
-
-const crypto = require('crypto');
+// 객체지향 분리 구조: 연결/스키마/마이그레이션은 db/Database.js,
+// 시간 파싱 및 시계 보정은 db/TimeService.js, ID 규칙은 db/ids.js가 전담합니다.
+const AppDatabase = require('./db/Database');
+const TimeService = require('./db/TimeService');
+const { DEFAULT_CATEGORY_ID, LEGACY_UUID_PREFIX, newUuid } = require('./db/ids');
 
 let createClient;
 try {
@@ -25,18 +22,8 @@ try {
   console.warn('@supabase/supabase-js 패키지를 로드할 수 없습니다. 클라우드 동기화가 불가능합니다.');
 }
 
-// 기본 카테고리('미분류')의 고정 UUID. 구 스키마의 id=1을 결정적 변환한 값과 동일합니다.
-const DEFAULT_CATEGORY_ID = '00000000-0000-4000-8000-000000000001';
-
-// 정수 ID → 결정적 UUID 변환 접두사 (로컬/원격 마이그레이션 공통 규칙)
-const LEGACY_UUID_PREFIX = '00000000-0000-4000-8000-';
-
 // 동기화 큐 항목의 비네트워크 오류 최대 재시도 횟수 (초과 시 sync_failures로 이동)
 const MAX_SYNC_RETRIES = 5;
-
-function newUuid() {
-  return crypto.randomUUID();
-}
 
 /**
  * 동기화 대상 테이블 메타데이터.
@@ -109,9 +96,20 @@ class InventoryManager {
    */
   constructor(dbPath = 'herb_inventory.db') {
     this.dbPath = dbPath;
-    this.db = null;
+
+    // 연결/스키마/레거시 마이그레이션은 AppDatabase 생성자에서 모두 완료됩니다.
+    this.appDb = new AppDatabase(dbPath);
+
+    /**
+     * better-sqlite3 원시 연결 핸들 (하위 호환용 공개 프로퍼티).
+     * 기존 호출부(테스트, CSVHandler, SmartPredictor)가 manager.db를 직접 참조합니다.
+     */
+    this.db = this.appDb.conn;
+
+    // 시간 파싱/시계 보정 전담 서비스
+    this.time = new TimeService();
+
     this.supabase = null; // Supabase 클라이언트 인스턴스
-    this.clockOffset = 0;
 
     // 동기화 큐 상태 필드 초기화
     this.isProcessingSync = false;
@@ -119,8 +117,6 @@ class InventoryManager {
 
     // 동기화 업서트 구문 캐시
     this._upsertStmtCache = new Map();
-
-    this.initDb();
 
     // 브라우저 온라인 전환 감지 리스너 등록
     if (typeof window !== 'undefined') {
@@ -136,519 +132,41 @@ class InventoryManager {
   }
 
   /**
-   * 데이터베이스 초기화, 레거시(정수 ID) 마이그레이션 및 테이블 생성
+   * 시계 보정 오프셋(ms). 실제 상태는 TimeService가 소유하며 여기서는 프록시만 제공합니다.
+   * (하위 호환: 기존 코드가 manager.clockOffset을 직접 읽는 경우 대응)
    */
-  initDb() {
-    try {
-      this.db = new Database(this.dbPath);
-      this.db.pragma('journal_mode = WAL');
-      this.db.pragma('foreign_keys = ON');
-
-      // 구 버전(정수 ID) 데이터베이스 감지 시 UUID 스키마로 마이그레이션
-      this.migrateLegacyIntegerIds();
-
-      this.db.prepare(`
-        CREATE TABLE IF NOT EXISTS categories (
-          id TEXT PRIMARY KEY,
-          name TEXT UNIQUE NOT NULL,
-          updated_at TEXT NOT NULL DEFAULT (datetime('now'))
-        )
-      `).run();
-
-      this.db.prepare(`
-        CREATE TABLE IF NOT EXISTS medicines (
-          id TEXT PRIMARY KEY,
-          name TEXT UNIQUE NOT NULL,
-          category_id TEXT NOT NULL DEFAULT '${DEFAULT_CATEGORY_ID}',
-          pack_size REAL NOT NULL,
-          unopened_packs INTEGER NOT NULL DEFAULT 0,
-          opened_pack_remain REAL NOT NULL DEFAULT 0,
-          safety_stock REAL NOT NULL DEFAULT 0,
-          unit TEXT NOT NULL DEFAULT 'g',
-          memo TEXT,
-          is_presence_only INTEGER NOT NULL DEFAULT 0,
-          updated_at TEXT NOT NULL DEFAULT (datetime('now')),
-          CHECK(pack_size > 0),
-          CHECK(unopened_packs >= 0),
-          CHECK(opened_pack_remain >= 0),
-          CHECK(safety_stock >= 0),
-          FOREIGN KEY(category_id) REFERENCES categories(id) ON DELETE SET DEFAULT
-        )
-      `).run();
-
-      this.db.prepare(`
-        CREATE TABLE IF NOT EXISTS prescriptions (
-          id TEXT PRIMARY KEY,
-          prescription_name TEXT,
-          patient_name TEXT NOT NULL,
-          total_items INTEGER NOT NULL,
-          note TEXT,
-          is_deducted INTEGER NOT NULL DEFAULT 1,
-          created_at TEXT NOT NULL DEFAULT (datetime('now')),
-          updated_at TEXT NOT NULL DEFAULT (datetime('now'))
-        )
-      `).run();
-
-      this.db.prepare(`
-        CREATE TABLE IF NOT EXISTS notifications (
-          id INTEGER PRIMARY KEY AUTOINCREMENT,
-          medicine_id TEXT NOT NULL,
-          medicine_name TEXT NOT NULL,
-          message TEXT NOT NULL,
-          is_read INTEGER DEFAULT 0,
-          created_at TEXT NOT NULL DEFAULT (datetime('now')),
-          FOREIGN KEY(medicine_id) REFERENCES medicines(id) ON DELETE CASCADE
-        )
-      `).run();
-
-      this.db.prepare(`
-        CREATE TABLE IF NOT EXISTS stock_logs (
-          id TEXT PRIMARY KEY,
-          medicine_id TEXT NOT NULL,
-          type TEXT CHECK(type IN ('IN', 'CONSUME', 'WASTE', 'ADJUST')) NOT NULL,
-          quantity REAL NOT NULL,
-          timestamp TEXT NOT NULL DEFAULT (datetime('now')),
-          prescription_id TEXT,
-          note TEXT,
-          FOREIGN KEY(medicine_id) REFERENCES medicines(id) ON DELETE CASCADE,
-          FOREIGN KEY(prescription_id) REFERENCES prescriptions(id) ON DELETE SET NULL
-        )
-      `).run();
-
-      this.db.prepare(`
-        CREATE TABLE IF NOT EXISTS prescription_items (
-          id TEXT PRIMARY KEY,
-          prescription_id TEXT NOT NULL,
-          medicine_id TEXT NOT NULL,
-          amount REAL NOT NULL,
-          FOREIGN KEY(prescription_id) REFERENCES prescriptions(id) ON DELETE CASCADE,
-          FOREIGN KEY(medicine_id) REFERENCES medicines(id)
-        )
-      `).run();
-
-      this.db.prepare(`
-        CREATE TABLE IF NOT EXISTS medicine_aliases (
-          id TEXT PRIMARY KEY,
-          medicine_id TEXT NOT NULL,
-          alias TEXT UNIQUE NOT NULL,
-          updated_at TEXT NOT NULL DEFAULT (datetime('now')),
-          FOREIGN KEY(medicine_id) REFERENCES medicines(id) ON DELETE CASCADE
-        )
-      `).run();
-
-      // Supabase 동기화 지원을 위한 삭제이력 테이블
-      this.db.prepare(`
-        CREATE TABLE IF NOT EXISTS deleted_records (
-          table_name TEXT NOT NULL,
-          record_id TEXT NOT NULL,
-          deleted_at TEXT NOT NULL DEFAULT (datetime('now')),
-          PRIMARY KEY (table_name, record_id)
-        )
-      `).run();
-
-      // 처방전 프리셋 마스터 테이블
-      this.db.prepare(`
-        CREATE TABLE IF NOT EXISTS prescription_presets (
-          id TEXT PRIMARY KEY,
-          preset_name TEXT NOT NULL,
-          note TEXT,
-          created_at TEXT NOT NULL DEFAULT (datetime('now')),
-          updated_at TEXT NOT NULL DEFAULT (datetime('now'))
-        )
-      `).run();
-
-      // 처방전 프리셋 상세 약재 테이블
-      this.db.prepare(`
-        CREATE TABLE IF NOT EXISTS prescription_preset_items (
-          id TEXT PRIMARY KEY,
-          preset_id TEXT NOT NULL,
-          medicine_id TEXT NOT NULL,
-          amount REAL NOT NULL,
-          FOREIGN KEY(preset_id) REFERENCES prescription_presets(id) ON DELETE CASCADE,
-          FOREIGN KEY(medicine_id) REFERENCES medicines(id)
-        )
-      `).run();
-
-      // Supabase 동기화 큐 테이블 (retry_count: 비네트워크 오류 재시도 횟수)
-      this.db.prepare(`
-        CREATE TABLE IF NOT EXISTS sync_queue (
-          id INTEGER PRIMARY KEY AUTOINCREMENT,
-          table_name TEXT NOT NULL,
-          record_id TEXT NOT NULL,
-          action TEXT NOT NULL CHECK(action IN ('UPSERT', 'DELETE', 'REPLACE_PRESET_ITEMS')),
-          retry_count INTEGER NOT NULL DEFAULT 0,
-          created_at TEXT NOT NULL DEFAULT (datetime('now')),
-          UNIQUE(table_name, record_id, action)
-        )
-      `).run();
-
-      // 최대 재시도 초과로 포기한 동기화 작업 보관 테이블 (묵살 방지용 dead-letter)
-      this.db.prepare(`
-        CREATE TABLE IF NOT EXISTS sync_failures (
-          id INTEGER PRIMARY KEY AUTOINCREMENT,
-          table_name TEXT NOT NULL,
-          record_id TEXT NOT NULL,
-          action TEXT NOT NULL,
-          error TEXT,
-          failed_at TEXT NOT NULL DEFAULT (datetime('now'))
-        )
-      `).run();
-
-      const exists = this.db.prepare('SELECT id FROM categories WHERE id = ?').get(DEFAULT_CATEGORY_ID);
-      if (!exists) {
-        this.db.prepare('INSERT INTO categories (id, name) VALUES (?, ?)').run(DEFAULT_CATEGORY_ID, '미분류');
-      }
-    } catch (err) {
-      console.error('SQLite 초기화 실패:', err);
-      throw err;
-    }
+  get clockOffset() {
+    return this.time.clockOffset;
   }
 
-  /**
-   * 구 버전(정수 AUTOINCREMENT ID) 스키마를 UUID(TEXT) 스키마로 안전하게 마이그레이션합니다.
-   * 정수 ID는 '00000000-0000-4000-8000-<12자리 hex>' 형태의 결정적 UUID로 변환되어
-   * 원격 Supabase 마이그레이션 결과와 동일한 ID 대응 관계를 유지합니다.
-   */
-  migrateLegacyIntegerIds() {
-    const tableExists = (name) =>
-      !!this.db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?").get(name);
-
-    if (!tableExists('medicines')) return; // 신규 설치 DB
-
-    const idCol = this.db.pragma('table_info(medicines)').find(c => c.name === 'id');
-    if (!idCol || !/INT/i.test(idCol.type || '')) return; // 이미 UUID 스키마
-
-    console.log('[Migration] 구 버전(정수 ID) 데이터베이스를 감지했습니다. UUID 스키마로 마이그레이션합니다...');
-
-    // 1단계: 구 버전 간 컬럼 격차 보정 (아주 오래된 DB에도 아래 복사 쿼리가 동작하도록)
-    const safeAlters = [
-      'ALTER TABLE prescriptions ADD COLUMN note TEXT',
-      'ALTER TABLE prescriptions ADD COLUMN is_deducted INTEGER NOT NULL DEFAULT 1',
-      'ALTER TABLE medicines ADD COLUMN memo TEXT',
-      'ALTER TABLE medicines ADD COLUMN is_presence_only INTEGER NOT NULL DEFAULT 0',
-      "ALTER TABLE categories ADD COLUMN updated_at TEXT NOT NULL DEFAULT ''",
-      "ALTER TABLE medicines ADD COLUMN updated_at TEXT NOT NULL DEFAULT ''",
-      "ALTER TABLE prescriptions ADD COLUMN updated_at TEXT NOT NULL DEFAULT ''"
-    ];
-    for (const sql of safeAlters) {
-      try {
-        this.db.prepare(sql).run();
-      } catch (e) {
-        // 이미 컬럼이 존재할 시 무시
-      }
-    }
-    for (const table of ['categories', 'medicines', 'prescriptions']) {
-      try {
-        this.db.prepare(`UPDATE ${table} SET updated_at = datetime('now') WHERE updated_at = ''`).run();
-      } catch (e) {
-        // updated_at 컬럼이 없는 예외 상황 무시
-      }
-    }
-
-    // 정수 ID → 결정적 UUID 변환 SQL 표현식 (NULL 허용 컬럼 대응)
-    const uuidExpr = (col) =>
-      `CASE WHEN ${col} IS NULL THEN NULL ELSE '${LEGACY_UUID_PREFIX}' || printf('%012x', ${col}) END`;
-
-    this.db.pragma('foreign_keys = OFF');
-    try {
-      const migrate = this.db.transaction(() => {
-        // categories
-        this.db.prepare(`
-          CREATE TABLE categories_v2 (
-            id TEXT PRIMARY KEY,
-            name TEXT UNIQUE NOT NULL,
-            updated_at TEXT NOT NULL DEFAULT (datetime('now'))
-          )
-        `).run();
-        this.db.prepare(`
-          INSERT INTO categories_v2 (id, name, updated_at)
-          SELECT ${uuidExpr('id')}, name, updated_at FROM categories
-        `).run();
-        this.db.prepare('DROP TABLE categories').run();
-        this.db.prepare('ALTER TABLE categories_v2 RENAME TO categories').run();
-
-        // medicines
-        this.db.prepare(`
-          CREATE TABLE medicines_v2 (
-            id TEXT PRIMARY KEY,
-            name TEXT UNIQUE NOT NULL,
-            category_id TEXT NOT NULL DEFAULT '${DEFAULT_CATEGORY_ID}',
-            pack_size REAL NOT NULL,
-            unopened_packs INTEGER NOT NULL DEFAULT 0,
-            opened_pack_remain REAL NOT NULL DEFAULT 0,
-            safety_stock REAL NOT NULL DEFAULT 0,
-            unit TEXT NOT NULL DEFAULT 'g',
-            memo TEXT,
-            is_presence_only INTEGER NOT NULL DEFAULT 0,
-            updated_at TEXT NOT NULL DEFAULT (datetime('now')),
-            CHECK(pack_size > 0),
-            CHECK(unopened_packs >= 0),
-            CHECK(opened_pack_remain >= 0),
-            CHECK(safety_stock >= 0),
-            FOREIGN KEY(category_id) REFERENCES categories(id) ON DELETE SET DEFAULT
-          )
-        `).run();
-        this.db.prepare(`
-          INSERT INTO medicines_v2 (id, name, category_id, pack_size, unopened_packs, opened_pack_remain, safety_stock, unit, memo, is_presence_only, updated_at)
-          SELECT ${uuidExpr('id')}, name, ${uuidExpr('category_id')}, pack_size, unopened_packs, opened_pack_remain, safety_stock, unit, memo, is_presence_only, updated_at
-          FROM medicines
-        `).run();
-        this.db.prepare('DROP TABLE medicines').run();
-        this.db.prepare('ALTER TABLE medicines_v2 RENAME TO medicines').run();
-
-        // prescriptions (prescription_name의 구 NOT NULL 제약도 이 재생성으로 함께 해소)
-        this.db.prepare(`
-          CREATE TABLE prescriptions_v2 (
-            id TEXT PRIMARY KEY,
-            prescription_name TEXT,
-            patient_name TEXT NOT NULL,
-            total_items INTEGER NOT NULL,
-            note TEXT,
-            is_deducted INTEGER NOT NULL DEFAULT 1,
-            created_at TEXT NOT NULL DEFAULT (datetime('now')),
-            updated_at TEXT NOT NULL DEFAULT (datetime('now'))
-          )
-        `).run();
-        this.db.prepare(`
-          INSERT INTO prescriptions_v2 (id, prescription_name, patient_name, total_items, note, is_deducted, created_at, updated_at)
-          SELECT ${uuidExpr('id')}, prescription_name, patient_name, total_items, note, is_deducted, created_at, updated_at
-          FROM prescriptions
-        `).run();
-        this.db.prepare('DROP TABLE prescriptions').run();
-        this.db.prepare('ALTER TABLE prescriptions_v2 RENAME TO prescriptions').run();
-
-        // prescription_items
-        if (tableExists('prescription_items')) {
-          this.db.prepare(`
-            CREATE TABLE prescription_items_v2 (
-              id TEXT PRIMARY KEY,
-              prescription_id TEXT NOT NULL,
-              medicine_id TEXT NOT NULL,
-              amount REAL NOT NULL,
-              FOREIGN KEY(prescription_id) REFERENCES prescriptions(id) ON DELETE CASCADE,
-              FOREIGN KEY(medicine_id) REFERENCES medicines(id)
-            )
-          `).run();
-          this.db.prepare(`
-            INSERT INTO prescription_items_v2 (id, prescription_id, medicine_id, amount)
-            SELECT ${uuidExpr('id')}, ${uuidExpr('prescription_id')}, ${uuidExpr('medicine_id')}, amount
-            FROM prescription_items
-          `).run();
-          this.db.prepare('DROP TABLE prescription_items').run();
-          this.db.prepare('ALTER TABLE prescription_items_v2 RENAME TO prescription_items').run();
-        }
-
-        // stock_logs
-        if (tableExists('stock_logs')) {
-          this.db.prepare(`
-            CREATE TABLE stock_logs_v2 (
-              id TEXT PRIMARY KEY,
-              medicine_id TEXT NOT NULL,
-              type TEXT CHECK(type IN ('IN', 'CONSUME', 'WASTE', 'ADJUST')) NOT NULL,
-              quantity REAL NOT NULL,
-              timestamp TEXT NOT NULL DEFAULT (datetime('now')),
-              prescription_id TEXT,
-              note TEXT,
-              FOREIGN KEY(medicine_id) REFERENCES medicines(id) ON DELETE CASCADE,
-              FOREIGN KEY(prescription_id) REFERENCES prescriptions(id) ON DELETE SET NULL
-            )
-          `).run();
-          this.db.prepare(`
-            INSERT INTO stock_logs_v2 (id, medicine_id, type, quantity, timestamp, prescription_id, note)
-            SELECT ${uuidExpr('id')}, ${uuidExpr('medicine_id')}, type, quantity, timestamp, ${uuidExpr('prescription_id')}, note
-            FROM stock_logs
-          `).run();
-          this.db.prepare('DROP TABLE stock_logs').run();
-          this.db.prepare('ALTER TABLE stock_logs_v2 RENAME TO stock_logs').run();
-        }
-
-        // medicine_aliases
-        if (tableExists('medicine_aliases')) {
-          this.db.prepare(`
-            CREATE TABLE medicine_aliases_v2 (
-              id TEXT PRIMARY KEY,
-              medicine_id TEXT NOT NULL,
-              alias TEXT UNIQUE NOT NULL,
-              updated_at TEXT NOT NULL DEFAULT (datetime('now')),
-              FOREIGN KEY(medicine_id) REFERENCES medicines(id) ON DELETE CASCADE
-            )
-          `).run();
-          this.db.prepare(`
-            INSERT INTO medicine_aliases_v2 (id, medicine_id, alias, updated_at)
-            SELECT ${uuidExpr('id')}, ${uuidExpr('medicine_id')}, alias, updated_at
-            FROM medicine_aliases
-          `).run();
-          this.db.prepare('DROP TABLE medicine_aliases').run();
-          this.db.prepare('ALTER TABLE medicine_aliases_v2 RENAME TO medicine_aliases').run();
-        }
-
-        // prescription_presets
-        if (tableExists('prescription_presets')) {
-          this.db.prepare(`
-            CREATE TABLE prescription_presets_v2 (
-              id TEXT PRIMARY KEY,
-              preset_name TEXT NOT NULL,
-              note TEXT,
-              created_at TEXT NOT NULL DEFAULT (datetime('now')),
-              updated_at TEXT NOT NULL DEFAULT (datetime('now'))
-            )
-          `).run();
-          this.db.prepare(`
-            INSERT INTO prescription_presets_v2 (id, preset_name, note, created_at, updated_at)
-            SELECT ${uuidExpr('id')}, preset_name, note, created_at, updated_at
-            FROM prescription_presets
-          `).run();
-          this.db.prepare('DROP TABLE prescription_presets').run();
-          this.db.prepare('ALTER TABLE prescription_presets_v2 RENAME TO prescription_presets').run();
-        }
-
-        // prescription_preset_items
-        if (tableExists('prescription_preset_items')) {
-          this.db.prepare(`
-            CREATE TABLE prescription_preset_items_v2 (
-              id TEXT PRIMARY KEY,
-              preset_id TEXT NOT NULL,
-              medicine_id TEXT NOT NULL,
-              amount REAL NOT NULL,
-              FOREIGN KEY(preset_id) REFERENCES prescription_presets(id) ON DELETE CASCADE,
-              FOREIGN KEY(medicine_id) REFERENCES medicines(id)
-            )
-          `).run();
-          this.db.prepare(`
-            INSERT INTO prescription_preset_items_v2 (id, preset_id, medicine_id, amount)
-            SELECT ${uuidExpr('id')}, ${uuidExpr('preset_id')}, ${uuidExpr('medicine_id')}, amount
-            FROM prescription_preset_items
-          `).run();
-          this.db.prepare('DROP TABLE prescription_preset_items').run();
-          this.db.prepare('ALTER TABLE prescription_preset_items_v2 RENAME TO prescription_preset_items').run();
-        }
-
-        // notifications (로컬 전용: 자체 id는 정수 유지, medicine_id 참조만 UUID로 변환)
-        if (tableExists('notifications')) {
-          this.db.prepare(`
-            CREATE TABLE notifications_v2 (
-              id INTEGER PRIMARY KEY AUTOINCREMENT,
-              medicine_id TEXT NOT NULL,
-              medicine_name TEXT NOT NULL,
-              message TEXT NOT NULL,
-              is_read INTEGER DEFAULT 0,
-              created_at TEXT NOT NULL DEFAULT (datetime('now')),
-              FOREIGN KEY(medicine_id) REFERENCES medicines(id) ON DELETE CASCADE
-            )
-          `).run();
-          this.db.prepare(`
-            INSERT INTO notifications_v2 (id, medicine_id, medicine_name, message, is_read, created_at)
-            SELECT id, ${uuidExpr('medicine_id')}, medicine_name, message, is_read, created_at
-            FROM notifications
-          `).run();
-          this.db.prepare('DROP TABLE notifications').run();
-          this.db.prepare('ALTER TABLE notifications_v2 RENAME TO notifications').run();
-        }
-
-        // deleted_records (record_id를 결정적 UUID로 변환)
-        if (tableExists('deleted_records')) {
-          this.db.prepare(`
-            CREATE TABLE deleted_records_v2 (
-              table_name TEXT NOT NULL,
-              record_id TEXT NOT NULL,
-              deleted_at TEXT NOT NULL DEFAULT (datetime('now')),
-              PRIMARY KEY (table_name, record_id)
-            )
-          `).run();
-          this.db.prepare(`
-            INSERT OR IGNORE INTO deleted_records_v2 (table_name, record_id, deleted_at)
-            SELECT table_name, ${uuidExpr('record_id')}, deleted_at FROM deleted_records
-          `).run();
-          this.db.prepare('DROP TABLE deleted_records').run();
-          this.db.prepare('ALTER TABLE deleted_records_v2 RENAME TO deleted_records').run();
-        }
-
-        // sync_queue (record_id 변환 + retry_count 컬럼 도입)
-        if (tableExists('sync_queue')) {
-          this.db.prepare(`
-            CREATE TABLE sync_queue_v2 (
-              id INTEGER PRIMARY KEY AUTOINCREMENT,
-              table_name TEXT NOT NULL,
-              record_id TEXT NOT NULL,
-              action TEXT NOT NULL CHECK(action IN ('UPSERT', 'DELETE', 'REPLACE_PRESET_ITEMS')),
-              retry_count INTEGER NOT NULL DEFAULT 0,
-              created_at TEXT NOT NULL DEFAULT (datetime('now')),
-              UNIQUE(table_name, record_id, action)
-            )
-          `).run();
-          this.db.prepare(`
-            INSERT OR IGNORE INTO sync_queue_v2 (id, table_name, record_id, action, created_at)
-            SELECT id, table_name, ${uuidExpr('record_id')}, action, created_at FROM sync_queue
-          `).run();
-          this.db.prepare('DROP TABLE sync_queue').run();
-          this.db.prepare('ALTER TABLE sync_queue_v2 RENAME TO sync_queue').run();
-        }
-      });
-      migrate();
-
-      const fkIssues = this.db.pragma('foreign_key_check');
-      if (fkIssues && fkIssues.length > 0) {
-        console.warn('[Migration] 외래 키 정합성 경고:', fkIssues);
-      }
-      console.log('[Migration] UUID 스키마 마이그레이션 완료.');
-    } finally {
-      this.db.pragma('foreign_keys = ON');
-    }
+  set clockOffset(value) {
+    this.time.clockOffset = value;
   }
 
   // ==========================================
   // Supabase 동기화 핵심 엔진 (하이브리드 캐시/동기화 모델)
   // ==========================================
 
-  /**
-   * SQLite 날짜 포맷('YYYY-MM-DD HH:mm:ss')을 ISO8601 형식으로 안전하게 변환
-   */
+  // -- 시간 관련 메서드는 TimeService에 위임합니다 (하위 호환용 프록시) ------------
+
+  /** SQLite 날짜 포맷을 ISO8601 형식으로 변환 → TimeService.parseSqliteTime */
   parseSqliteTime(timeStr) {
-    if (!timeStr) return new Date().toISOString();
-    try {
-      let formatted = timeStr.toString().trim().replace(' ', 'T');
-      if (!formatted.endsWith('Z') && !formatted.includes('+')) {
-        formatted += 'Z';
-      }
-      const d = new Date(formatted);
-      return isNaN(d.getTime()) ? new Date().toISOString() : d.toISOString();
-    } catch (e) {
-      return new Date().toISOString();
-    }
+    return this.time.parseSqliteTime(timeStr);
   }
 
-  /**
-   * ISO8601 또는 원격 날짜 포맷을 로컬 SQLite 날짜 포맷('YYYY-MM-DD HH:mm:ss')으로 안전하게 변환
-   */
+  /** ISO8601을 SQLite 날짜 포맷으로 변환 → TimeService.formatToSqliteTime */
   formatToSqliteTime(isoTimeStr) {
-    if (!isoTimeStr) return new Date().toISOString().replace('T', ' ').substring(0, 19);
-    try {
-      const formatted = isoTimeStr.toString().trim().replace('T', ' ');
-      const parts = formatted.split('.');
-      if (parts[0]) {
-        return parts[0].substring(0, 19);
-      }
-      return formatted.substring(0, 19);
-    } catch (e) {
-      return new Date().toISOString().replace('T', ' ').substring(0, 19);
-    }
+    return this.time.formatToSqliteTime(isoTimeStr);
   }
 
-  /**
-   * 로컬 SQLite에 저장된 UTC 시간 문자열을 epoch(ms)로 변환합니다.
-   * DB는 항상 UTC로 저장하므로 반드시 parseSqliteTime을 거쳐 UTC로 해석해야 합니다.
-   * (new Date('YYYY-MM-DD HH:mm:ss')는 로컬 시간대로 해석되어 KST 환경에서 9시간 오차가 발생)
-   */
+  /** 로컬 SQLite UTC 시간 문자열 → epoch(ms) → TimeService.localTimeMs */
   localTimeMs(sqliteTimeStr) {
-    return new Date(this.parseSqliteTime(sqliteTimeStr)).getTime();
+    return this.time.localTimeMs(sqliteTimeStr);
   }
 
-  /**
-   * 원격(ISO8601) 시간 문자열을 epoch(ms)로 변환합니다.
-   */
+  /** 원격 ISO8601 시간 문자열 → epoch(ms) → TimeService.remoteTimeMs */
   remoteTimeMs(isoTimeStr) {
-    const t = new Date(isoTimeStr || 0).getTime();
-    return isNaN(t) ? 0 : t;
+    return this.time.remoteTimeMs(isoTimeStr);
   }
 
   /**
@@ -710,40 +228,14 @@ class InventoryManager {
     }
   }
 
-  /**
-   * Supabase 서버 시간과 로컬 클라이언트 시간 간의 오프셋(차이)을 계산합니다.
-   * API 키는 URL 쿼리가 아닌 요청 헤더로 전달합니다. (프록시/서버 로그 노출 방지)
-   */
+  /** 서버-로컬 시계 오프셋 계산 → TimeService.calculateClockOffset */
   async calculateClockOffset(url, key) {
-    this.clockOffset = 0;
-    try {
-      const start = Date.now();
-      const res = await fetch(`${url}/rest/v1/`, {
-        method: 'HEAD',
-        headers: { apikey: key }
-      });
-      const serverDateStr = res.headers.get('date');
-      if (serverDateStr) {
-        const serverTime = new Date(serverDateStr).getTime();
-        const rtt = Date.now() - start;
-        // RTT(왕복시간)의 절반을 더하여 지연 보정
-        const adjustedServerTime = serverTime + (rtt / 2);
-        this.clockOffset = adjustedServerTime - Date.now();
-        console.log(`[Clock Sync] Supabase 서버와 시간 동기화 완료. Offset: ${this.clockOffset}ms`);
-      }
-    } catch (err) {
-      console.warn('[Clock Sync] Supabase 서버 시간 동기화 실패 (기본값 0ms 사용):', err);
-    }
+    return this.time.calculateClockOffset(url, key);
   }
 
-  /**
-   * 보정된 시간을 SQLite YYYY-MM-DD HH:mm:ss 형식의 UTC 시간으로 반환합니다.
-   */
+  /** 시계 보정된 현재 SQLite 시간 문자열 → TimeService.getAdjustedSqliteTime */
   getAdjustedSqliteTime() {
-    const adjustedMs = Date.now() + (this.clockOffset || 0);
-    const d = new Date(adjustedMs);
-    const pad = (n) => n.toString().padStart(2, '0');
-    return `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())} ${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())}:${pad(d.getUTCSeconds())}`;
+    return this.time.getAdjustedSqliteTime();
   }
 
   /**
