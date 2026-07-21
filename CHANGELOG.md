@@ -4,6 +4,8 @@
 
 ## [Unreleased]
 
+## [1.7.2] - 2026-07-21
+
 ### Added
 
 - **처방 탭 상/하 카드 세로 확장 토글** (`src/frontend/index.html`, `src/frontend/renderer.js`, `src/frontend/style.css`, `src/frontend/sf-icons.css`, `src/frontend/svg/chevron.up.svg`, `src/frontend/svg/chevron.down.svg`)
