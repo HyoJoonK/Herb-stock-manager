@@ -204,8 +204,8 @@ function initDatabase() {
   try {
     const path = require('path');
     const InventoryManager = require('../backend/InventoryManager');
-    const CSVHandler = require('../backend/CSVHandler');
-    const SmartPredictor = require('../backend/SmartPredictor');
+    const CSVHandler = require('../backend/services/CSVHandler');
+    const SmartPredictor = require('../backend/services/SmartPredictor');
 
     // URL 쿼리 파라미터에서 userDataPath 파싱 (Electron userData 폴더 반영)
     const urlParams = new URLSearchParams(window.location.search);

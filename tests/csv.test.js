@@ -6,7 +6,7 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 
-const CSVHandler = require('../src/backend/CSVHandler');
+const CSVHandler = require('../src/backend/services/CSVHandler');
 const InventoryManager = require('../src/backend/InventoryManager');
 
 // ---------------------------------------------------------------------------
