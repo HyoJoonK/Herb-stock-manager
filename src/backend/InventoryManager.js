@@ -2175,21 +2175,39 @@ class InventoryManager {
     return this.db.prepare('SELECT * FROM prescriptions ORDER BY created_at DESC, rowid DESC').all();
   }
 
-  searchPrescriptions(query) {
+  /**
+   * 최근 처방 N건만 조회 (불러오기 모달 등 전체 로드가 불필요한 화면용)
+   */
+  getRecentPrescriptions(limit = 5) {
+    return this.db.prepare('SELECT * FROM prescriptions ORDER BY created_at DESC, rowid DESC LIMIT ?').all(limit);
+  }
+
+  /**
+   * 처방 검색 (처방명/환자명/메모/포함 약재명)
+   * @param {number} limit 0이면 무제한, 양수면 해당 건수까지만 반환
+   */
+  searchPrescriptions(query, limit = 0) {
     if (!query || query.trim() === '') {
-      return this.getAllPrescriptions();
+      return limit > 0 ? this.getRecentPrescriptions(limit) : this.getAllPrescriptions();
     }
     const likeQuery = `%${query.trim()}%`;
-    return this.db.prepare(`
+    const params = [likeQuery, likeQuery, likeQuery, likeQuery];
+    let sql = `
       SELECT DISTINCT p.*
       FROM prescriptions p
       LEFT JOIN prescription_items pi ON p.id = pi.prescription_id
       LEFT JOIN medicines m ON pi.medicine_id = m.id
       WHERE p.prescription_name LIKE ?
          OR p.patient_name LIKE ?
+         OR p.note LIKE ?
          OR m.name LIKE ?
       ORDER BY p.created_at DESC
-    `).all(likeQuery, likeQuery, likeQuery);
+    `;
+    if (limit > 0) {
+      sql += ' LIMIT ?';
+      params.push(limit);
+    }
+    return this.db.prepare(sql).all(...params);
   }
 
   deductPrescriptionStock(prescriptionId) {

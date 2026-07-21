@@ -48,6 +48,7 @@ let currentPrescriptionItems = []; // 처방 바구니 [{ id, name, pack_size, a
 let batchEditItems = new Map(); // 일괄 편집 대상 약재 맵 (id => medData)
 let contextTargetMedId = null; // 우클릭 대상 약재 ID
 let contextTargetPrescId = null; // 우클릭 대상 처방 ID
+let currentDetailPrescId = null; // 처방 상세조회 모달에 표시 중인 처방 ID
 let contextTargetCategoryId = null; // 우클릭 대상 카테고리 ID
 let isPrescriptionEditMode = false; // 처방 수정 모드 활성화 여부
 let currentEditingPrescId = null; // 현재 수정 중인 처방 ID
@@ -637,10 +638,18 @@ function renderInquiryLogs(medId) {
 // ----------------------------------------------------
 
 function renderPrescription() {
-  const tbody = document.getElementById('prescriptionBody');
+  const grid = document.getElementById('prescriptionBody');
   const empty = document.getElementById('prescriptionEmpty');
   const wrapper = document.getElementById('prescriptionTableWrapper');
-  tbody.innerHTML = '';
+  grid.innerHTML = '';
+
+  // 헤더 우측 도움말에 현재 담긴 약재 수 표기 (가독성 보조)
+  const helper = document.getElementById('prescriptionHelperText');
+  if (helper) {
+    helper.textContent = currentPrescriptionItems.length > 0
+      ? `추가된 약재 ${currentPrescriptionItems.length}종 · 목록에서 Enter 시 소모량 입력 팝업 노출`
+      : '목록에서 Enter 시 소모량 입력 팝업 노출';
+  }
 
   if (currentPrescriptionItems.length === 0) {
     empty.style.display = 'flex';
@@ -650,23 +659,64 @@ function renderPrescription() {
   empty.style.display = 'none';
   if (wrapper) wrapper.style.display = 'block';
 
+  // 2열 그리드: 항목은 위에서부터 좌→우 순서(a1 b1 a2 b2 …)로 채워짐
   currentPrescriptionItems.forEach((item, index) => {
-    const tr = document.createElement('tr');
-    tr.dataset.index = index; // 인덱스를 dataset으로 설정
-    tr.innerHTML = `
-      <td style="font-weight:700; color:var(--color-primary);">${escapeHtml(item.name)}</td>
-      <td style="color:var(--color-text-muted);">${escapeHtml(item.pack_size)}g 기준</td>
-      <td>
+    const cell = document.createElement('div');
+    cell.className = 'presc-grid-cell';
+    cell.dataset.index = index; // 인덱스를 dataset으로 설정
+    cell.innerHTML = `
+      <span class="presc-cell-name">${escapeHtml(item.name)}</span>
+      <span class="presc-cell-amount">
         <input type="text" value="${escapeHtml(item.amount)}"
-               class="presc-item-amount-input numeric-input" data-numeric-type="decimal"
-               style="width: 70px; padding: 4px; border: 1px solid var(--color-border); border-radius: 4px; text-align: center;"> g
-      </td>
-      <td style="text-align: center;">
-        <span class="presc-remove-btn" style="cursor:pointer;"><span class="sf-icon sf-icon-xmark"></span></span>
-      </td>
+               class="presc-item-amount-input numeric-input" data-numeric-type="decimal"> g
+      </span>
+      <span class="presc-remove-btn" title="제거"><span class="sf-icon sf-icon-xmark"></span></span>
     `;
-    tbody.appendChild(tr);
+    grid.appendChild(cell);
   });
+}
+
+// ----------------------------------------------------
+// [처방] 상/하 카드 세로 확장 상태 제어
+// 'top'    : 작성 카드가 이력 카드 헤더 위까지 확장 (이력 카드는 헤더만 노출)
+// 'bottom' : 이력 카드가 작성 카드 헤더 아래까지 확장 (작성 카드는 헤더만 노출)
+// ----------------------------------------------------
+let prescPanelExpand = 'default'; // 'default' | 'top' | 'bottom'
+
+function setPrescPanelExpand(state) {
+  prescPanelExpand = state;
+  const panel = document.querySelector('#view-prescription .right-main-panel');
+  if (!panel) return;
+  panel.classList.toggle('expand-top', state === 'top');
+  panel.classList.toggle('expand-bottom', state === 'bottom');
+
+  // 토글 버튼 아이콘/툴팁을 현재 상태에 맞게 갱신
+  const btnTop = document.getElementById('btnExpandTop');
+  const btnBottom = document.getElementById('btnExpandBottom');
+  if (btnTop) {
+    btnTop.innerHTML = state === 'top'
+      ? '<span class="sf-icon sf-icon-chevron-up"></span>'
+      : '<span class="sf-icon sf-icon-chevron-down"></span>';
+    btnTop.title = state === 'top'
+      ? '기본 크기로 복원 (헤더 더블클릭)'
+      : '작성 영역 세로 확장 (헤더 더블클릭)';
+  }
+  if (btnBottom) {
+    btnBottom.innerHTML = state === 'bottom'
+      ? '<span class="sf-icon sf-icon-chevron-down"></span>'
+      : '<span class="sf-icon sf-icon-chevron-up"></span>';
+    btnBottom.title = state === 'bottom'
+      ? '기본 크기로 복원 (헤더 더블클릭)'
+      : '목록 영역 세로 확장 (헤더 더블클릭)';
+  }
+}
+
+function togglePrescPanelExpand(which) {
+  setPrescPanelExpand(prescPanelExpand === which ? 'default' : which);
+}
+
+function resetPrescPanelExpand() {
+  if (prescPanelExpand !== 'default') setPrescPanelExpand('default');
 }
 
 /**
@@ -742,7 +792,8 @@ function renderPastPrescriptions() {
 function openPrescriptionDetailModal(prescId) {
   try {
     const detail = dbManager.getPrescriptionDetails(prescId);
-    
+    currentDetailPrescId = prescId;
+
     document.getElementById('viewPrescName').textContent = detail.prescription_name || '(이름 없음)';
     document.getElementById('viewPrescPatient').textContent = detail.patient_name;
     document.getElementById('viewPrescDate').textContent = formatUTCToKSTString(detail.created_at);
@@ -1442,8 +1493,8 @@ document.addEventListener('DOMContentLoaded', () => {
   if (prescTbody) {
     prescTbody.addEventListener('change', (e) => {
       if (e.target.classList.contains('presc-item-amount-input')) {
-        const tr = e.target.closest('tr');
-        const index = parseInt(tr.dataset.index);
+        const cell = e.target.closest('.presc-grid-cell');
+        const index = parseInt(cell.dataset.index);
         const val = parseFloat(e.target.value);
         if (!isNaN(val) && val > 0) {
           currentPrescriptionItems[index].amount = val;
@@ -1453,8 +1504,8 @@ document.addEventListener('DOMContentLoaded', () => {
     prescTbody.addEventListener('keydown', (e) => {
       if (e.key === 'Enter' && e.target.classList.contains('presc-item-amount-input')) {
         e.preventDefault();
-        const tr = e.target.closest('tr');
-        const index = parseInt(tr.dataset.index);
+        const cell = e.target.closest('.presc-grid-cell');
+        const index = parseInt(cell.dataset.index);
         const val = parseFloat(e.target.value);
         if (!isNaN(val) && val > 0) {
           currentPrescriptionItems[index].amount = val;
@@ -1471,8 +1522,8 @@ document.addEventListener('DOMContentLoaded', () => {
     prescTbody.addEventListener('click', (e) => {
       const removeBtn = e.target.closest('.presc-remove-btn');
       if (removeBtn) {
-        const tr = removeBtn.closest('tr');
-        const index = parseInt(tr.dataset.index);
+        const cell = removeBtn.closest('.presc-grid-cell');
+        const index = parseInt(cell.dataset.index);
         currentPrescriptionItems.splice(index, 1);
         renderPrescription();
       }
@@ -1566,6 +1617,8 @@ document.addEventListener('DOMContentLoaded', () => {
   const pastPrescSearch = document.getElementById('pastPrescriptionsSearch');
   if (pastPrescSearch) {
     pastPrescSearch.addEventListener('input', () => {
+      // 이력 카드가 헤더만 남은 상태에서 검색하면 결과가 보이도록 복원
+      if (prescPanelExpand === 'top') resetPrescPanelExpand();
       if (currentHistoryTab === 'history') {
         renderPastPrescriptions();
       } else {
@@ -1579,6 +1632,16 @@ document.addEventListener('DOMContentLoaded', () => {
   if (btnViewPrescClose) {
     btnViewPrescClose.addEventListener('click', () => {
       document.getElementById('prescriptionDetailModal').classList.remove('show');
+    });
+  }
+
+  // 처방 기록 상세조회 모달 → 처방 수정 모드 진입 바인딩
+  const btnEditPrescriptionDetail = document.getElementById('btnEditPrescriptionDetail');
+  if (btnEditPrescriptionDetail) {
+    btnEditPrescriptionDetail.addEventListener('click', () => {
+      if (currentDetailPrescId === null) return;
+      document.getElementById('prescriptionDetailModal').classList.remove('show');
+      enterPrescriptionEditMode(currentDetailPrescId);
     });
   }
 
@@ -1608,6 +1671,8 @@ document.addEventListener('DOMContentLoaded', () => {
           amount: amount
         });
       }
+      // 작성 카드가 헤더만 남은 상태에서 약재를 추가하면 바구니가 보이도록 복원
+      if (prescPanelExpand === 'bottom') resetPrescPanelExpand();
       renderPrescription();
       showToast(`✅ "${med.name}" ${amount}g 이 처방전에 추가되었습니다.`);
     },
@@ -1781,7 +1846,8 @@ document.addEventListener('DOMContentLoaded', () => {
       isPrescriptionEditMode = true;
       currentEditingPrescId = prescId;
 
-      // 1. UI 탭 전환
+      // 1. UI 탭 전환 (확장 상태였다면 기본 분할로 복원)
+      resetPrescPanelExpand();
       switchTab('prescription');
 
       // 2. 제목 변경 및 강조 스타일링 추가 (모드 스위처 숨기고 편집 타이틀 표시)
@@ -1875,7 +1941,8 @@ document.addEventListener('DOMContentLoaded', () => {
       isPresetEditMode = true;
       currentEditingPresetId = presetId;
 
-      // 1. UI 탭 전환
+      // 1. UI 탭 전환 (확장 상태였다면 기본 분할로 복원)
+      resetPrescPanelExpand();
       switchTab('prescription');
 
       // 2. 프리셋 모드로 설정
@@ -2340,6 +2407,7 @@ document.addEventListener('DOMContentLoaded', () => {
       document.getElementById('prescriptionName').value = '';
       document.getElementById('patientName').value = '';
       document.getElementById('prescriptionNote').value = '';
+      resetPrescPanelExpand(); // 저장 완료 시 확장 상태를 기본 분할로 복원
       renderPrescription();
       renderMedicineList();
       renderPastPrescriptions();
@@ -2363,10 +2431,13 @@ document.addEventListener('DOMContentLoaded', () => {
   // [처방 프리셋] 이벤트 바인딩 및 함수
   // ----------------------------------------------------
   document.getElementById('btnModePrescription').addEventListener('click', () => {
+    // 작성 카드가 헤더만 남은 상태에서 모드를 고르면 작성 영역이 보이도록 복원
+    if (prescPanelExpand === 'bottom') resetPrescPanelExpand();
     setPrescMode('prescription');
   });
 
   document.getElementById('btnModePreset').addEventListener('click', () => {
+    if (prescPanelExpand === 'bottom') resetPrescPanelExpand();
     setPrescMode('preset');
   });
 
@@ -2398,6 +2469,7 @@ document.addEventListener('DOMContentLoaded', () => {
         showToast(`⭐ 프리셋 "${presetName}"이 저장되었습니다.`);
         setPrescMode('prescription');
       }
+      resetPrescPanelExpand(); // 저장 완료 시 확장 상태를 기본 분할로 복원
 
       if (currentHistoryTab === 'presets') {
         renderPresetsHistoryList();
@@ -2421,69 +2493,134 @@ document.addEventListener('DOMContentLoaded', () => {
     renderPresetListModal();
   });
 
+  // 불러오기 모달의 환자 처방 렌더링 상한 (전체 이력 로드로 인한 성능 저하 방지)
+  const LOAD_MODAL_RECENT_PRESC = 5;  // 검색어 없을 때 노출할 최근 처방 건수
+  const LOAD_MODAL_MAX_PRESC = 30;    // 검색 시 렌더링할 최대 처방 건수
+
   function renderPresetListModal() {
     const tbody = document.getElementById('presetListBody');
     const empty = document.getElementById('presetListEmpty');
-    const searchQuery = document.getElementById('presetSearchInput').value.trim().toLowerCase();
-    
+    const rawQuery = document.getElementById('presetSearchInput').value.trim();
+    const searchQuery = rawQuery.toLowerCase();
+
     tbody.innerHTML = '';
-    
+
+    // 1. 프리셋: 항상 상단 우선 노출
     let presets = dbManager.getAllPresets();
     if (searchQuery) {
-      presets = presets.filter(p => 
-        p.preset_name.toLowerCase().includes(searchQuery) || 
+      presets = presets.filter(p =>
+        p.preset_name.toLowerCase().includes(searchQuery) ||
         (p.note && p.note.toLowerCase().includes(searchQuery))
       );
     }
-    
-    if (presets.length === 0) {
+
+    // 2. 환자 처방: 검색어 없으면 최근 N건만, 검색 시 최대 M건까지 (SQL LIMIT)
+    let prescriptions = [];
+    let prescHasMore = false;
+    if (searchQuery) {
+      const found = dbManager.searchPrescriptions(rawQuery, LOAD_MODAL_MAX_PRESC + 1);
+      prescHasMore = found.length > LOAD_MODAL_MAX_PRESC;
+      prescriptions = found.slice(0, LOAD_MODAL_MAX_PRESC);
+    } else {
+      prescriptions = dbManager.getRecentPrescriptions(LOAD_MODAL_RECENT_PRESC);
+    }
+
+    if (presets.length === 0 && prescriptions.length === 0) {
       empty.style.display = 'flex';
       return;
     }
-    
     empty.style.display = 'none';
-    presets.forEach(p => {
+
+    const addSectionRow = (html) => {
       const tr = document.createElement('tr');
-      tr.innerHTML = `
-        <td style="font-weight: 700; color: var(--color-primary);">${escapeHtml(p.preset_name)}</td>
-        <td style="font-style: italic; color: var(--color-text-muted); font-size: 11px;">${escapeHtml(p.note || '-')}</td>
-        <td style="text-align: center;">
-          <button class="btn-load-preset" data-id="${escapeHtml(p.id)}">적용</button>
-        </td>
-        <td style="text-align: center;">
-          <button class="btn-delete-preset" data-id="${escapeHtml(p.id)}"><span class="sf-icon sf-icon-trash"></span></button>
-        </td>
-      `;
+      tr.className = 'load-section-row';
+      tr.innerHTML = `<td colspan="3">${html}</td>`;
       tbody.appendChild(tr);
-    });
-    
-    // 불러오기 이벤트 연결
+    };
+
+    if (presets.length > 0) {
+      addSectionRow('<span class="sf-icon sf-icon-star"></span> 프리셋');
+      presets.forEach(p => {
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+          <td style="font-weight: 700; color: var(--color-primary);">${escapeHtml(p.preset_name)}</td>
+          <td style="font-style: italic; color: var(--color-text-muted); font-size: 11px;">${escapeHtml(p.note || '-')}</td>
+          <td style="text-align: center;">
+            <button class="btn-load-preset" data-id="${escapeHtml(p.id)}">적용</button>
+          </td>
+        `;
+        tbody.appendChild(tr);
+      });
+    }
+
+    if (prescriptions.length > 0) {
+      addSectionRow(searchQuery
+        ? '<span class="sf-icon sf-icon-scroll"></span> 환자 처방'
+        : `<span class="sf-icon sf-icon-scroll"></span> 환자 처방 — 최근 ${prescriptions.length}건 (환자명·처방명·메모로 검색해 더 찾기)`);
+      prescriptions.forEach(p => {
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+          <td style="font-weight: 700; color: var(--color-primary);">${escapeHtml(p.prescription_name || '(이름 없음)')}</td>
+          <td style="color: var(--color-text-muted); font-size: 11px;">${escapeHtml(p.patient_name)} · ${formatUTCToKSTString(p.created_at).slice(0, 10)}</td>
+          <td style="text-align: center;">
+            <button class="btn-load-preset btn-load-presc" data-id="${escapeHtml(p.id)}">적용</button>
+          </td>
+        `;
+        tbody.appendChild(tr);
+      });
+      if (prescHasMore) {
+        addSectionRow(`결과가 ${LOAD_MODAL_MAX_PRESC}건을 초과합니다 — 검색어를 더 구체적으로 입력해 주세요.`);
+      }
+    }
+
+    // 적용 이벤트 연결 (프리셋 / 환자 처방 분기)
+    // 프리셋 삭제는 '등록된 프리셋 목록' 탭에서 수행
     tbody.querySelectorAll('.btn-load-preset').forEach(btn => {
       btn.addEventListener('click', () => {
         const id = btn.getAttribute('data-id');
-        loadPresetToBasket(id);
-      });
-    });
-    
-    // 삭제 이벤트 연결
-    tbody.querySelectorAll('.btn-delete-preset').forEach(btn => {
-      btn.addEventListener('click', async () => {
-        const id = btn.getAttribute('data-id');
-        const preset = presets.find(p => String(p.id) === String(id));
-        if (await showConfirm(`"${preset.preset_name}" 프리셋을 삭제하시겠습니까?`)) {
-          try {
-            dbManager.deletePreset(id);
-            showToast('프리셋이 삭제되었습니다.');
-            renderPresetListModal();
-            if (currentHistoryTab === 'presets') {
-              renderPresetsHistoryList();
-            }
-          } catch (err) {
-            showAlert(`프리셋 삭제 실패: ${err.message}`);
-          }
+        if (btn.classList.contains('btn-load-presc')) {
+          loadPrescriptionToBasket(id);
+        } else {
+          loadPresetToBasket(id);
         }
       });
     });
+  }
+
+  /**
+   * 과거 환자 처방을 작성 바구니로 불러오기 (환자명/처방명/메모까지 복원)
+   */
+  async function loadPrescriptionToBasket(prescId) {
+    if (currentPrescriptionItems.length > 0) {
+      if (!(await showConfirm('현재 작성 중인 처방전 약재 목록을 지우고 선택한 처방을 불러오시겠습니까?'))) {
+        return;
+      }
+    }
+
+    try {
+      const detail = dbManager.getPrescriptionDetails(prescId);
+
+      currentPrescriptionItems = detail.items.map(item => {
+        const med = dbManager.getAllMedicines().find(m => m.id === item.medicine_id);
+        return {
+          id: item.medicine_id,
+          name: item.medicine_name,
+          pack_size: med ? med.pack_size : 500,
+          amount: item.amount
+        };
+      });
+
+      document.getElementById('patientName').value = detail.patient_name || '';
+      document.getElementById('prescriptionName').value = detail.prescription_name || '';
+      document.getElementById('prescriptionNote').value = detail.note || '';
+
+      resetPrescPanelExpand(); // 처방 적용 시 작성 카드가 보이도록 기본 분할로 복원
+      renderPrescription();
+      document.getElementById('presetLoadModal').classList.remove('show');
+      showToast(`📋 "${detail.prescription_name || detail.patient_name}" 처방을 불러왔습니다.`);
+    } catch (err) {
+      showAlert(`처방 로드 실패: ${err.message}`);
+    }
   }
 
   async function loadPresetToBasket(presetId) {
@@ -2510,6 +2647,7 @@ document.addEventListener('DOMContentLoaded', () => {
         document.getElementById('prescriptionNote').value = detail.note;
       }
       
+      resetPrescPanelExpand(); // 프리셋 적용 시 작성 카드가 보이도록 기본 분할로 복원
       renderPrescription();
       document.getElementById('presetLoadModal').classList.remove('show');
       showToast(`⭐ "${detail.preset_name}" 프리셋을 적용했습니다.`);
@@ -2522,12 +2660,38 @@ document.addEventListener('DOMContentLoaded', () => {
   // [처방 완료 이력 & 프리셋 목록 탭 전환] 이벤트 바인딩 및 함수
   // ----------------------------------------------------
   document.getElementById('btnTabHistory').addEventListener('click', () => {
+    // 이력 카드가 헤더만 남은 상태에서 탭을 고르면 목록이 보이도록 복원
+    if (prescPanelExpand === 'top') resetPrescPanelExpand();
     setHistoryTab('history');
   });
 
   document.getElementById('btnTabPresets').addEventListener('click', () => {
+    if (prescPanelExpand === 'top') resetPrescPanelExpand();
     setHistoryTab('presets');
   });
+
+  // ----------------------------------------------------
+  // [처방] 상/하 카드 세로 확장 토글 (버튼 클릭 + 헤더 더블클릭)
+  // ----------------------------------------------------
+  document.getElementById('btnExpandTop').addEventListener('click', () => {
+    togglePrescPanelExpand('top');
+  });
+
+  document.getElementById('btnExpandBottom').addEventListener('click', () => {
+    togglePrescPanelExpand('bottom');
+  });
+
+  const bindExpandHeaderDblClick = (headerId, which) => {
+    const header = document.getElementById(headerId);
+    if (!header) return;
+    header.addEventListener('dblclick', (e) => {
+      // 헤더 안의 버튼/입력창 더블클릭은 확장 토글로 취급하지 않음
+      if (e.target.closest('button, input')) return;
+      togglePrescPanelExpand(which);
+    });
+  };
+  bindExpandHeaderDblClick('prescriptionCardHeader', 'top');
+  bindExpandHeaderDblClick('historyCardHeader', 'bottom');
 
   function setHistoryTab(tab) {
     currentHistoryTab = tab;
@@ -2551,7 +2715,7 @@ document.addEventListener('DOMContentLoaded', () => {
       wrapperPresets.style.display = 'none';
       emptyPresets.style.display = 'none';
       
-      searchInput.placeholder = '처방명, 환자명, 약재명 검색...';
+      searchInput.placeholder = '처방명, 환자명, 약재명, 메모 검색...';
       renderPastPrescriptions();
     } else {
       btnHistory.classList.remove('active');

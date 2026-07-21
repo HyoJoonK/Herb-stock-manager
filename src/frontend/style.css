@@ -373,10 +373,64 @@ body {
 
 /* 분할 높이 카드들 */
 .split-card-top {
-  flex: 6.5;
+  flex: 6.5 1 0;
+  transition: flex-grow 0.25s ease;
 }
 .split-card-bottom {
-  flex: 3.5;
+  flex: 3.5 1 0;
+  transition: flex-grow 0.25s ease;
+}
+
+/* ----------------------------------------------------
+   9-1. 처방 탭 상/하 카드 세로 확장 상태
+   - expand-top: 작성 카드가 이력 카드 헤더 위까지 확장 (이력 카드는 헤더만 노출)
+   - expand-bottom: 이력 카드가 작성 카드 헤더 아래까지 확장 (작성 카드는 헤더만 노출)
+   ---------------------------------------------------- */
+.right-main-panel.expand-top .split-card-top,
+.right-main-panel.expand-bottom .split-card-bottom {
+  flex: 1 1 0;
+}
+
+.right-main-panel.expand-top .split-card-bottom,
+.right-main-panel.expand-bottom .split-card-top {
+  flex: 0 0 auto;
+}
+
+.right-main-panel.expand-top .split-card-bottom .card-content,
+.right-main-panel.expand-bottom .split-card-top .card-content {
+  display: none !important;
+}
+
+/* 헤더만 남은 카드: 헤더 하단 구분선 제거로 이중 테두리 방지 */
+.right-main-panel.expand-top .split-card-bottom .card-header,
+.right-main-panel.expand-bottom .split-card-top .card-header {
+  border-bottom: none;
+  border-bottom-left-radius: calc(var(--radius-lg) - 1px);
+  border-bottom-right-radius: calc(var(--radius-lg) - 1px);
+}
+
+/* 확장/복원 토글 버튼 */
+.panel-expand-btn {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-card);
+  color: var(--color-text-muted);
+  font-size: 12px;
+  cursor: pointer;
+  transition: var(--transition-fast);
+}
+
+.panel-expand-btn:hover {
+  color: var(--color-primary);
+  border-color: var(--color-primary-light);
+  background: var(--color-primary-bg);
 }
 
 /* ----------------------------------------------------
@@ -539,6 +593,97 @@ body {
   position: sticky;
   top: 0;
   z-index: 10;
+}
+
+/* ----------------------------------------------------
+   10-1. 처방 바구니 2열 그리드 (약재명 · 소모량 · 제거)
+   항목은 위에서부터 좌→우 순서(a1 b1 a2 b2 …)로 채워짐
+   ---------------------------------------------------- */
+#prescriptionTableWrapper {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+}
+
+.presc-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  align-content: start;
+  background: var(--bg-card);
+}
+
+.presc-grid-cell {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 6px 12px;
+  font-size: 12px;
+  border-bottom: 1px solid var(--color-border);
+}
+
+/* 두 열 사이 중앙 세로 구분선 */
+.presc-grid-cell:nth-child(odd) {
+  border-right: 1px solid var(--color-border);
+}
+
+/* 행 단위(2칸) 줄무늬 배경으로 시선 이동 보조 */
+.presc-grid-cell:nth-child(4n+1),
+.presc-grid-cell:nth-child(4n+2) {
+  background: var(--bg-primary);
+}
+
+.presc-cell-name {
+  flex: 1;
+  min-width: 0;
+  font-weight: 700;
+  color: var(--color-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.presc-cell-amount {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--color-text-muted);
+}
+
+.presc-cell-amount input {
+  width: 64px;
+  padding: 4px 6px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  font-size: 12px;
+  text-align: center;
+  background-color: var(--bg-card);
+  color: var(--color-text-main);
+  transition: var(--transition-fast);
+}
+
+.presc-cell-amount input:focus {
+  outline: none;
+  border-color: var(--color-primary-light);
+  background-color: #ffffff;
+}
+
+.presc-remove-btn {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: var(--radius-sm);
+  color: var(--color-text-muted);
+  cursor: pointer;
+  transition: var(--transition-fast);
+}
+
+.presc-remove-btn:hover {
+  color: var(--color-accent);
+  background: var(--color-accent-bg);
 }
 
 /* 처방 이력/프리셋 테이블 컬럼 정렬·간격 조정
@@ -900,21 +1045,6 @@ body {
   border-color: var(--color-primary-light) !important;
 }
 
-.btn-delete-preset {
-  background: none;
-  border: none;
-  color: var(--color-accent);
-  cursor: pointer;
-  font-size: 14px;
-  padding: 4px 8px;
-  border-radius: var(--radius-sm);
-  transition: background var(--transition-fast);
-}
-
-.btn-delete-preset:hover {
-  background: var(--color-accent-bg);
-}
-
 .btn-load-preset {
   background: var(--color-primary-bg);
   color: var(--color-primary);
@@ -930,6 +1060,15 @@ body {
 .btn-load-preset:hover {
   background: var(--color-primary);
   color: white;
+}
+
+/* 불러오기 모달: 프리셋/환자 처방 구분 섹션 행 */
+.load-section-row td {
+  padding: 5px 12px;
+  background-color: var(--bg-input);
+  color: var(--color-text-muted);
+  font-size: 11px;
+  font-weight: 700;
 }
 
 /* ----------------------------------------------------

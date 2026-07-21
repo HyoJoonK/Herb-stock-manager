@@ -2,6 +2,30 @@
 
 이 프로젝트의 주요 변경 사항을 버전별로 기록합니다. 형식은 [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/)를 참고하며, 버전 관리는 [Semantic Versioning](https://semver.org/lang/ko/)을 따릅니다.
 
+## [Unreleased]
+
+### Added
+
+- **처방 탭 상/하 카드 세로 확장 토글** (`src/frontend/index.html`, `src/frontend/renderer.js`, `src/frontend/style.css`, `src/frontend/sf-icons.css`, `src/frontend/svg/chevron.up.svg`, `src/frontend/svg/chevron.down.svg`)
+  - 처방 조제 작성(상단)·처방 완료 이력(하단) 카드 헤더에 확장 버튼을 추가했고, 헤더 빈 영역 더블클릭으로도 토글됩니다.
+  - 상단 확장 시 하단 카드는 헤더만 남고 작성 카드가 그 위까지 세로로 확장되며(늘어난 공간은 약재 리스트만 차지), 하단 확장은 그 반대로 동작합니다.
+  - 확장 상태는 다음 상호작용 시 자동으로 기본 분할로 복원됩니다: 처방 저장/재고 차감/프리셋 저장 완료, 이력에서 처방·프리셋 수정 진입, 프리셋 적용, 헤더만 남은 카드의 탭(모드) 버튼 클릭, 헤더만 남은 이력 카드에서 검색 입력, 작성 카드가 접힌 상태에서 약재 추가.
+
+- **"불러오기" 모달에 기존 환자 처방 통합** (`src/frontend/index.html`, `src/frontend/renderer.js`, `src/frontend/style.css`, `src/backend/InventoryManager.js`)
+  - "프리셋 불러오기" 버튼을 "불러오기"로 바꾸고, 모달에서 프리셋과 과거 환자 처방을 함께 불러올 수 있습니다. 프리셋 섹션이 항상 상단에 우선 노출됩니다.
+  - 환자 처방은 검색어가 없으면 최근 5건만 표시하고, 검색(환자명·처방명·메모·약재명) 시 최대 30건까지 SQL `LIMIT`으로 조회해 대량 이력에서도 성능이 유지됩니다. 30건 초과 시 검색어 구체화 안내 행을 표시합니다.
+  - 환자 처방 적용 시 약재 목록과 함께 환자명·처방명·메모도 작성 폼에 복원됩니다.
+  - 모달의 삭제 열은 제거하고 적용 버튼을 마지막 열로 옮겼습니다. 프리셋 삭제는 '등록된 프리셋 목록' 탭에서, 처방 삭제는 처방 완료 이력에서 수행합니다.
+  - `InventoryManager.searchPrescriptions`가 처방 메모도 검색하며 선택적 `limit` 인자를 받습니다. 최근 N건 조회용 `getRecentPrescriptions(limit)`를 신설했습니다.
+- **처방 기록 상세조회 모달에 "처방 수정" 버튼 추가** (`src/frontend/index.html`, `src/frontend/renderer.js`)
+  - 재고 차감 실행 버튼 오른쪽에 배치되며, 클릭 시 모달을 닫고 해당 처방의 수정 모드로 바로 진입합니다.
+
+### Changed
+
+- **처방 바구니(추가된 약재 리스트)를 2열 그리드로 개편** (`src/frontend/index.html`, `src/frontend/renderer.js`, `src/frontend/style.css`)
+  - 규격 컬럼을 제거하고 약재명·소모량 입력·제거 버튼만 남긴 칸을 좌→우, 위→아래 순서(a1 b1 a2 b2 …)로 채워 한 화면에 두 배의 약재를 표시합니다.
+  - 가독성 보조: 두 열 사이 중앙 세로 구분선, 행 단위 줄무늬 배경, 긴 약재명 말줄임 처리, 카드 헤더에 "추가된 약재 N종" 실시간 표기를 추가했습니다.
+
 ## [1.7.1] - 2026-07-21
 
 ### Fixed

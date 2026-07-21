@@ -193,7 +193,7 @@
       <div class="right-main-panel">
         <!-- 처방전 작성기 -->
         <div class="card split-card-top" id="prescriptionCard">
-          <div class="card-header" style="display: flex; justify-content: space-between; align-items: center;">
+          <div class="card-header" id="prescriptionCardHeader" style="display: flex; justify-content: space-between; align-items: center;">
             <div class="card-title" id="prescriptionCardTitle" style="display: none;"><span class="sf-icon sf-icon-memo"></span> 처방전 조제 작성</div>
             <div class="presc-mode-switcher" style="display: flex; background: var(--bg-input); padding: 3px; border-radius: var(--radius-md); gap: 2px;">
               <button class="switcher-btn active" id="btnModePrescription">
@@ -203,7 +203,12 @@
                 <span class="sf-icon sf-icon-star"></span> 처방 프리셋 만들기
               </button>
             </div>
-            <span style="font-size: 11px; color: var(--color-text-muted);" id="prescriptionHelperText">목록에서 Enter 시 소모량 입력 팝업 노출</span>
+            <div style="display: flex; align-items: center; gap: 10px;">
+              <span style="font-size: 11px; color: var(--color-text-muted);" id="prescriptionHelperText">목록에서 Enter 시 소모량 입력 팝업 노출</span>
+              <button class="panel-expand-btn" id="btnExpandTop" title="작성 영역 세로 확장 (헤더 더블클릭)">
+                <span class="sf-icon sf-icon-chevron-down"></span>
+              </button>
+            </div>
           </div>
           <div class="card-content" style="display: flex; flex-direction: column;">
             <div class="presc-meta-row">
@@ -219,10 +224,10 @@
                 <input type="text" id="prescriptionName" placeholder="예: 감기약 (선택)" autocomplete="off">
               </div>
 
-              <!-- 프리셋 불러오기 버튼 -->
+              <!-- 프리셋/기존 처방 불러오기 버튼 -->
               <div class="input-group" id="groupOpenPresetLoad" style="flex: none; justify-content: flex-end; align-items: flex-end; margin-bottom: 0;">
                 <button class="btn btn-secondary" id="btnOpenPresetLoad" style="height: 38px; padding: 0 16px; border: 1px solid var(--color-border); font-size: 12px; display: flex; align-items: center; gap: 4px; border-radius: var(--radius-sm); white-space: nowrap;">
-                  <span class="sf-icon sf-icon-star"></span> 프리셋 불러오기
+                  <span class="sf-icon sf-icon-import"></span> 불러오기
                 </button>
               </div>
             </div>
@@ -232,18 +237,9 @@
               <input type="text" id="prescriptionNote" placeholder="예: 하루 3회 복용, 식후 30분 따뜻하게 복용" autocomplete="off">
             </div>
 
+            <!-- 약재 바구니: 2열 그리드 (위에서부터 좌→우 순서로 채움) -->
             <div class="presc-table-wrapper" id="prescriptionTableWrapper" style="flex: 1; overflow-y: auto; margin-bottom: 12px; min-height: 0; display: none;">
-              <table class="presc-table">
-                <thead>
-                  <tr>
-                    <th>약재명</th>
-                    <th>규격</th>
-                    <th>소모량</th>
-                    <th style="width: 60px; text-align: center;">제거</th>
-                  </tr>
-                </thead>
-                <tbody id="prescriptionBody"></tbody>
-              </table>
+              <div class="presc-grid" id="prescriptionBody"></div>
             </div>
             
             <div id="prescriptionEmpty" class="empty-state" style="flex: 1; display: flex; align-items: center; justify-content: center; margin-bottom: 12px;">
@@ -277,7 +273,7 @@
 
         <!-- 과거 처방 및 프리셋 목록 -->
         <div class="card split-card-bottom" id="historyCard">
-          <div class="card-header" style="display: flex; justify-content: space-between; align-items: center;">
+          <div class="card-header" id="historyCardHeader" style="display: flex; justify-content: space-between; align-items: center;">
             <div class="presc-history-switcher" style="display: flex; background: var(--bg-input); padding: 3px; border-radius: var(--radius-md); gap: 2px;">
               <button class="switcher-btn active" id="btnTabHistory">
                 <span class="sf-icon sf-icon-scroll"></span> 처방 완료 이력
@@ -286,9 +282,14 @@
                 <span class="sf-icon sf-icon-star"></span> 등록된 프리셋 목록
               </button>
             </div>
-            <div class="search-input-wrapper" style="width: 260px;">
-              <span class="search-icon" style="left: 10px; font-size: 12px; top: 50%; transform: translateY(-50%);"><span class="sf-icon sf-icon-search"></span></span>
-              <input type="text" id="pastPrescriptionsSearch" placeholder="처방명, 환자명, 약재명 검색..." autocomplete="off" style="padding: 6px 10px 6px 28px; font-size: 12px; border-radius: var(--radius-sm); height: 28px;">
+            <div style="display: flex; align-items: center; gap: 10px;">
+              <div class="search-input-wrapper" style="width: 260px;">
+                <span class="search-icon" style="left: 10px; font-size: 12px; top: 50%; transform: translateY(-50%);"><span class="sf-icon sf-icon-search"></span></span>
+                <input type="text" id="pastPrescriptionsSearch" placeholder="처방명, 환자명, 약재명, 메모 검색..." autocomplete="off" style="padding: 6px 10px 6px 28px; font-size: 12px; border-radius: var(--radius-sm); height: 28px;">
+              </div>
+              <button class="panel-expand-btn" id="btnExpandBottom" title="목록 영역 세로 확장 (헤더 더블클릭)">
+                <span class="sf-icon sf-icon-chevron-up"></span>
+              </button>
             </div>
           </div>
           <div class="card-content" style="padding: 28px 20px 10px; display: flex; flex-direction: column;">
@@ -604,7 +605,10 @@
         </div>
         
         <div style="display: flex; justify-content: space-between; align-items: center; gap: 10px;">
-          <button class="btn btn-primary" id="btnDeductPrescriptionDetail" style="padding: 8px 16px;"><span class="sf-icon sf-icon-box"></span> 재고 차감 실행</button>
+          <div style="display: flex; align-items: center; gap: 10px;">
+            <button class="btn btn-primary" id="btnDeductPrescriptionDetail" style="padding: 8px 16px;"><span class="sf-icon sf-icon-box"></span> 재고 차감 실행</button>
+            <button class="btn btn-secondary" id="btnEditPrescriptionDetail" style="padding: 8px 16px; border: 1px solid var(--color-border);"><span class="sf-icon sf-icon-pencil"></span> 처방 수정</button>
+          </div>
           <button class="btn" id="btnViewPrescClose" style="padding: 8px 16px; border: 1px solid var(--color-border);">닫기</button>
         </div>
       </div>
@@ -657,25 +661,24 @@
 
   <!-- 처방 프리셋 불러오기 모달 -->
   <div class="modal-overlay" id="presetLoadModal">
-    <div class="modal-content" style="width: 500px; max-height: 80vh; display: flex; flex-direction: column;">
+    <div class="modal-content" style="width: 560px; max-height: 80vh; display: flex; flex-direction: column;">
       <div class="modal-header" style="flex: none; display: flex; justify-content: space-between; align-items: center;">
-        <span><span class="sf-icon sf-icon-star"></span> 처방 프리셋 불러오기</span>
+        <span><span class="sf-icon sf-icon-import"></span> 처방 불러오기 (프리셋 · 환자 처방)</span>
         <button class="btn-close-modal" id="btnPresetLoadClose" style="background: none; border: none; font-size: 16px; cursor: pointer; color: var(--color-text-muted);">✕</button>
       </div>
       <div class="modal-form" style="flex: 1; display: flex; flex-direction: column; overflow: hidden; min-height: 0; padding-top: 10px;">
         <div class="search-input-wrapper" style="width: 100%; margin-bottom: 12px; flex: none;">
           <span class="search-icon" style="left: 10px; font-size: 12px; top: 50%; transform: translateY(-50%);"><span class="sf-icon sf-icon-search"></span></span>
-          <input type="text" id="presetSearchInput" placeholder="프리셋 이름, 메모 검색..." autocomplete="off" style="width: 100%; padding: 8px 10px 8px 30px; font-size: 12px; border-radius: var(--radius-sm); border: 1px solid var(--color-border); height: 32px;">
+          <input type="text" id="presetSearchInput" placeholder="프리셋명, 환자명, 처방명, 메모, 약재명 검색..." autocomplete="off" style="width: 100%; padding: 8px 10px 8px 30px; font-size: 12px; border-radius: var(--radius-sm); border: 1px solid var(--color-border); height: 32px;">
         </div>
-        
+
         <div class="log-table-wrapper" id="presetListWrapper" style="flex: 1; overflow-y: auto; min-height: 0; border: 1px solid var(--color-border); border-radius: var(--radius-md); background: #fafbfa;">
           <table class="presc-table">
             <thead>
               <tr>
-                <th>프리셋명</th>
-                <th>메모</th>
+                <th>이름</th>
+                <th>메모 / 환자 정보</th>
                 <th style="width: 70px; text-align: center;">적용</th>
-                <th style="width: 50px; text-align: center;">삭제</th>
               </tr>
             </thead>
             <tbody id="presetListBody">
@@ -683,7 +686,7 @@
             </tbody>
           </table>
           <div id="presetListEmpty" class="empty-state" style="display: none; padding: 40px 0; text-align: center;">
-            <span>등록된 처방 프리셋이 없습니다.</span>
+            <span>표시할 프리셋/처방이 없습니다.</span>
           </div>
         </div>
       </div>

@@ -170,3 +170,13 @@
   mask-image: url('svg/checkmark.svg');
   -webkit-mask-image: url('svg/checkmark.svg');
 }
+
+.sf-icon-chevron-up {
+  mask-image: url('svg/chevron.up.svg');
+  -webkit-mask-image: url('svg/chevron.up.svg');
+}
+
+.sf-icon-chevron-down {
+  mask-image: url('svg/chevron.down.svg');
+  -webkit-mask-image: url('svg/chevron.down.svg');
+}
