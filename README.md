@@ -83,18 +83,43 @@ npm run dist
 
 ## 프로젝트 구조
 
+v1.8.0부터 코드베이스가 객체지향 계층 구조로 재구성되었습니다. (기능·데이터 호환성은 이전 버전과 동일)
+
 ```
 src/
-├── main.js                  # Electron 메인 프로세스 (윈도우 생성, 자동 업데이트, IPC)
+├── main.js                   # Electron 메인 프로세스 진입점 (앱 수명주기 + IPC 등록)
+├── main/
+│   ├── WindowManager.js      # 스플래시/메인 윈도우 생성·수명 관리
+│   └── UpdateManager.js      # electron-updater 자동 업데이트 흐름
 ├── backend/
-│   ├── InventoryManager.js  # SQLite 스키마, 재고/처방 CRUD, Supabase 동기화 엔진
-│   ├── SmartPredictor.js    # 소모량 분석 기반 안전 재고/발주 예측
-│   └── CSVHandler.js        # CSV 가져오기/내보내기
+│   ├── InventoryManager.js   # 백엔드 Facade — 기존 공개 API 유지, 하위 계층에 위임
+│   ├── db/
+│   │   ├── Database.js       # SQLite 연결, 스키마 생성, 레거시(정수 ID)→UUID 마이그레이션
+│   │   ├── TimeService.js    # 시간 파싱/포맷, 서버-로컬 시계 보정(clock offset)
+│   │   └── ids.js            # UUID 생성 및 ID 규칙 상수 (단일 정의 지점)
+│   ├── repositories/         # 테이블별 CRUD (Base·Category·Medicine·Prescription·Preset·StockLog·Notification)
+│   ├── services/
+│   │   ├── StockService.js         # 재고 소모/입고/폐기/복원 알고리즘
+│   │   ├── PrescriptionService.js  # 처방 생성·수정·삭제·후차감 트랜잭션
+│   │   ├── SmartPredictor.js       # 소모량 분석 기반 안전 재고/발주 예측
+│   │   └── CSVHandler.js           # CSV 가져오기/내보내기
+│   ├── sync/                 # Supabase 동기화 서브시스템
+│   │   ├── SyncEngine.js           # 연결 수립·전체 동기화 오케스트레이션
+│   │   ├── TableMapper.js          # 동기화 테이블 선언의 단일 등록 지점
+│   │   ├── ConflictResolver.js     # Last-Write-Wins 충돌 판정
+│   │   ├── SyncQueue.js            # 오프라인 안전 업로드 대기열 (재시도/실패 이력)
+│   │   └── RealtimeSubscriber.js   # 실시간 원격 변경 수신 → 로컬 반영
+│   └── utils/validators.js   # 공통 유효성 검사
 └── frontend/
-    ├── index.html / renderer.js / style.css  # 메인 UI 및 렌더러 로직
-    ├── splash.html / splash.js   # 기동 시 업데이트 체크 스플래시 화면
-    ├── QuickSearchEngine.js  # 키보드 내비게이션 / 초성 검색 엔진
-    └── svg/                  # 아이콘 리소스
+    ├── index.html / style.css     # 메인 UI 마크업/스타일
+    ├── renderer.js                # 렌더러 진입점 (부트스트랩 전용)
+    ├── App.js                     # 렌더러 코디네이터 (조립, 탭 전환, CSV 액션)
+    ├── core/                      # AppState / EventBus / DialogService / NumericInput / ModalKeyboard / utils
+    ├── views/                     # 탭·영역별 View (MedicineList·Inquiry·Prescription·Predict·Batch·Notification)
+    ├── components/                # 모달·컨텍스트 메뉴·사용량 차트 컴포넌트
+    ├── QuickSearchEngine.js       # 키보드 내비게이션 / 초성 검색 엔진
+    ├── splash.html / splash.js    # 기동 시 업데이트 체크 스플래시 화면
+    └── svg/                       # 아이콘 리소스
 tests/                        # node:test 단위 테스트 (npm test)
 supabase_triggers.sql         # Supabase 스키마/트리거/마이그레이션 스크립트 (SQL Editor에서 실행)
 ```
