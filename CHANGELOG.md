@@ -4,6 +4,10 @@
 
 ## [Unreleased]
 
+## [1.8.1] - 2026-07-24
+
+윈도우 저사양 환경의 기동 UX 개선(데이터 로딩 완료 후 창 노출)과 자동 업데이트 리스너 중복 등록 수정을 담은 패치 릴리스입니다.
+
 ### Fixed
 
 - **저사양 Windows 환경에서 창이 뜬 뒤 4~5초간 데이터 없는 빈 화면이 보이던 문제** (`src/main/WindowManager.js`, `src/frontend/renderer.js`)
