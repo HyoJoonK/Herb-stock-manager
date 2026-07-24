@@ -4,6 +4,10 @@
 
 ## [Unreleased]
 
+## [1.8.2] - 2026-07-24
+
+기동 로딩 표시를 스플래시 유지 방식에서 스켈레톤 고스트 UI로 교체한 패치 릴리스입니다. 창이 즉시 뜨고, 데이터가 로드되는 동안 실제 항목과 동일한 크기의 자리 표시가 노출됩니다.
+
 ### Changed
 
 - **기동 로딩 표시를 스플래시 유지 방식에서 스켈레톤 UI 방식으로 교체** (`src/frontend/index.html`, `src/frontend/style.css`, `src/main/WindowManager.js`, `src/frontend/renderer.js`, `src/frontend/splash.js`)
