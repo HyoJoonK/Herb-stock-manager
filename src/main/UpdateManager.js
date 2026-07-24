@@ -9,6 +9,9 @@
  *  - 수동 체크(isManualCheck): 설정 모달의 '업데이트 확인' 버튼 → 메인 윈도우에 상태 표시
  *  - 정기 체크: 3시간마다 백그라운드 확인, 다운로드 완료 시 재시작 여부를 대화상자로 질의
  *  - 개발 모드(!app.isPackaged): 실제 서버 호출 없이 기동 타임라인만 시뮬레이션
+ *
+ * start()는 멱등합니다: autoUpdater 이벤트 리스너와 3시간 정기 체크는 최초 1회만
+ * 등록되고, 재호출 시(second-instance 경로 등)에는 기동 체크만 다시 수행합니다.
  */
 
 const { app, dialog } = require('electron');
@@ -27,6 +30,8 @@ class UpdateManager {
     this.isStartupCheck = true;
     /** 기동 타임아웃 핸들 */
     this.startupTimeout = null;
+    /** autoUpdater 리스너·정기 체크 등록 완료 여부 (start 재호출 시 중복 등록 방지) */
+    this.initialized = false;
   }
 
   /** 5초 타임아웃 시작 (업데이트 서버 지연 방지용 Fallback) */
@@ -71,6 +76,33 @@ class UpdateManager {
       return;
     }
 
+    // autoUpdater 이벤트 리스너와 3시간 정기 체크는 최초 1회만 등록합니다.
+    // (second-instance 경로에서 start()가 재호출되어도 중복 등록되지 않도록)
+    if (!this.initialized) {
+      this.initialized = true;
+      this.registerAutoUpdaterEvents();
+
+      // 이후 3시간마다 백그라운드 정기 체크
+      setInterval(() => {
+        autoUpdater.checkForUpdatesAndNotify().catch((err) => {
+          console.error('정기 자동 업데이트 체크 오류:', err);
+        });
+      }, 3 * 60 * 60 * 1000);
+    }
+
+    // 기동 체크 개시 (재호출 시에도 스플래시 → 메인 윈도우 흐름을 동일하게 수행)
+    this.isStartupCheck = true;
+    this.clearStartupTimeout();
+    this.startStartupTimeout();
+    autoUpdater.checkForUpdatesAndNotify().catch((err) => {
+      console.error('초기 자동 업데이트 체크 오류:', err);
+      this.windows.launchMainWindow();
+      this.isStartupCheck = false;
+    });
+  }
+
+  /** autoUpdater 이벤트 핸들러 일괄 등록. (start()에서 최초 1회만 호출됩니다) */
+  registerAutoUpdaterEvents() {
     // 업데이트 다운로드 완료 시 핸들러
     autoUpdater.on('update-downloaded', (info) => {
       this.isManualCheck = false;
@@ -186,21 +218,6 @@ class UpdateManager {
       }
     });
 
-    // 초기 기동 시 업데이트 체크 개시
-    this.isStartupCheck = true;
-    this.startStartupTimeout();
-    autoUpdater.checkForUpdatesAndNotify().catch((err) => {
-      console.error('초기 자동 업데이트 체크 오류:', err);
-      this.windows.launchMainWindow();
-      this.isStartupCheck = false;
-    });
-
-    // 이후 3시간마다 백그라운드 정기 체크
-    setInterval(() => {
-      autoUpdater.checkForUpdatesAndNotify().catch((err) => {
-        console.error('정기 자동 업데이트 체크 오류:', err);
-      });
-    }, 3 * 60 * 60 * 1000);
   }
 
   /**

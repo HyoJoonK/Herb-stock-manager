@@ -40,6 +40,7 @@ if (!gotTheLock) {
 } else {
   app.on('second-instance', () => {
     // 두 번째 인스턴스가 실행을 시도할 때 기존 윈도우가 있다면 포커싱하고, 없다면 새로 생성합니다.
+    // (start()는 멱등 — 재호출 시 리스너/정기 체크는 중복 등록되지 않고 기동 체크만 다시 수행)
     const allWindows = BrowserWindow.getAllWindows();
     if (allWindows.length === 0) {
       windowManager.createSplashWindow();

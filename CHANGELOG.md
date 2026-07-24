@@ -10,6 +10,10 @@
   - 기존에는 `ready-to-show`(첫 페인트) 이벤트로 메인 윈도우를 노출했는데, 이 이벤트는 렌더러의 DB 로드·첫 렌더링(`App.init`)이 실행되기 **전**에 발화하므로 초기화가 느린 환경(백신 실시간 검사·느린 디스크 등)에서 빈 스켈레톤 UI가 수 초간 노출되었습니다.
   - 렌더러가 초기화 완료 시 `renderer-init-complete` IPC 신호를 보내고, 메인 프로세스는 이 신호를 받은 뒤에만 창을 표시합니다. 그동안 스플래시가 유지되며, 신호 유실 대비 15초 타임아웃 안전장치를 두었습니다. init 중 오류가 나도 신호는 전송되어 창이 영영 숨겨지지 않습니다.
 
+- **`UpdateManager.start()` 재호출 시 autoUpdater 리스너·정기 체크가 중복 등록되던 문제** (`src/main/UpdateManager.js`, `src/main.js`)
+  - macOS에서 모든 창을 닫은 채 두 번째 인스턴스를 실행하면 `second-instance` 경로가 `start()`를 다시 호출해 이벤트 리스너 6종과 3시간 주기 체크가 이중 등록되었습니다(다운로드 완료 대화상자 중복 표시 등).
+  - `start()`를 멱등하게 변경: 리스너 등록(`registerAutoUpdaterEvents()`)과 정기 체크 `setInterval`은 최초 1회만 수행하고, 재호출 시에는 기동 체크(스플래시 → 메인 윈도우 흐름)만 다시 실행합니다. 기동 타임아웃도 재호출 전에 정리해 잔여 타이머를 방지합니다.
+
 ### Changed
 
 - **스플래시 진행률 표시 재조정** (`src/frontend/splash.js`, `src/main/WindowManager.js`)
