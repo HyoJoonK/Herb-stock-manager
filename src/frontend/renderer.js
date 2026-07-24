@@ -32,7 +32,18 @@ const App = require('./App');
 // DOM 로드 완료 후 애플리케이션 구동
 document.addEventListener('DOMContentLoaded', () => {
   const app = new App();
-  app.init();
+  try {
+    app.init();
+  } finally {
+    // 초기화(DB 로드 + 첫 렌더링) 완료를 메인 프로세스에 알려 메인 윈도우를 노출시킵니다.
+    // init 중 오류가 나더라도 신호를 보내 윈도우가 영영 숨겨지는 것을 방지합니다.
+    // (WindowManager가 이 신호 수신 전까지 스플래시를 유지)
+    try {
+      require('electron').ipcRenderer.send('renderer-init-complete');
+    } catch (e) {
+      console.error('초기화 완료 신호 전송 실패:', e);
+    }
+  }
 
   // 디버깅/콘솔 접근용 전역 노출 (선택적 편의 기능)
   window.app = app;
