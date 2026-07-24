@@ -118,7 +118,7 @@ src/
     ├── views/                     # 탭·영역별 View (MedicineList·Inquiry·Prescription·Predict·Batch·Notification)
     ├── components/                # 모달·컨텍스트 메뉴·사용량 차트 컴포넌트
     ├── QuickSearchEngine.js       # 키보드 내비게이션 / 초성 검색 엔진
-    ├── splash.html / splash.js    # 기동 시 업데이트 체크 스플래시 화면
+    ├── splash.html / splash.js    # 기동 시 업데이트 체크·데이터 로딩 진행률 스플래시 화면
     └── svg/                       # 아이콘 리소스
 tests/                        # node:test 단위 테스트 (npm test)
 supabase_triggers.sql         # Supabase 스키마/트리거/마이그레이션 스크립트 (SQL Editor에서 실행)
