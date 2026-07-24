@@ -65,11 +65,148 @@
             <input type="text" class="tab-search-input" id="inquirySearchInput" placeholder="약재명 또는 초성 검색..." autocomplete="off">
           </div>
         </div>
+        <!-- 아래 두 컨테이너의 스켈레톤 고스트는 초기 로딩 전용입니다.
+             실제 항목과 동일한 클래스 구조를 사용하므로 크기가 항상 실물과 일치하며,
+             App.init의 첫 렌더링(renderCategoryTabs/render)이 innerHTML을 교체하며 자동 제거됩니다. -->
         <div class="category-container" id="inquiryCategoryContainer">
-          <!-- JS에서 동적 추가됨 -->
+          <button class="category-tab skeleton-ghost"><span class="skeleton-bar" style="width: 2em;"></span></button>
+          <button class="category-tab skeleton-ghost"><span class="skeleton-bar" style="width: 2.8em;"></span></button>
+          <button class="category-tab skeleton-ghost"><span class="skeleton-bar" style="width: 2.2em;"></span></button>
+          <button class="category-tab skeleton-ghost"><span class="skeleton-bar" style="width: 3.4em;"></span></button>
         </div>
         <div class="list-wrapper">
-          <div class="medicine-list" id="inquiryMedicineList"></div>
+          <div class="medicine-list" id="inquiryMedicineList">
+            <div class="medicine-item skeleton-ghost">
+              <div class="med-info">
+                <div style="display:flex; align-items:center; gap:8px;">
+                  <span class="med-name"><span class="skeleton-bar" style="width: 4.5em;"></span></span>
+                  <span class="status-badge skeleton-badge">미분류</span>
+                </div>
+                <div class="med-stock"><span class="skeleton-bar" style="width: 10em;"></span></div>
+              </div>
+              <div style="text-align: right; display:flex; flex-direction:column; align-items:flex-end; gap:4px;">
+                <span class="status-badge skeleton-badge">적정</span>
+                <span style="font-size:10px;"><span class="skeleton-bar" style="width: 5em;"></span></span>
+              </div>
+            </div>
+            <div class="medicine-item skeleton-ghost">
+              <div class="med-info">
+                <div style="display:flex; align-items:center; gap:8px;">
+                  <span class="med-name"><span class="skeleton-bar" style="width: 3.5em;"></span></span>
+                  <span class="status-badge skeleton-badge">미분류</span>
+                </div>
+                <div class="med-stock"><span class="skeleton-bar" style="width: 8.5em;"></span></div>
+              </div>
+              <div style="text-align: right; display:flex; flex-direction:column; align-items:flex-end; gap:4px;">
+                <span class="status-badge skeleton-badge">적정</span>
+                <span style="font-size:10px;"><span class="skeleton-bar" style="width: 4.5em;"></span></span>
+              </div>
+            </div>
+            <div class="medicine-item skeleton-ghost">
+              <div class="med-info">
+                <div style="display:flex; align-items:center; gap:8px;">
+                  <span class="med-name"><span class="skeleton-bar" style="width: 5.5em;"></span></span>
+                  <span class="status-badge skeleton-badge">미분류</span>
+                </div>
+                <div class="med-stock"><span class="skeleton-bar" style="width: 9.5em;"></span></div>
+              </div>
+              <div style="text-align: right; display:flex; flex-direction:column; align-items:flex-end; gap:4px;">
+                <span class="status-badge skeleton-badge">적정</span>
+                <span style="font-size:10px;"><span class="skeleton-bar" style="width: 5em;"></span></span>
+              </div>
+            </div>
+            <div class="medicine-item skeleton-ghost">
+              <div class="med-info">
+                <div style="display:flex; align-items:center; gap:8px;">
+                  <span class="med-name"><span class="skeleton-bar" style="width: 4em;"></span></span>
+                  <span class="status-badge skeleton-badge">미분류</span>
+                </div>
+                <div class="med-stock"><span class="skeleton-bar" style="width: 11em;"></span></div>
+              </div>
+              <div style="text-align: right; display:flex; flex-direction:column; align-items:flex-end; gap:4px;">
+                <span class="status-badge skeleton-badge">적정</span>
+                <span style="font-size:10px;"><span class="skeleton-bar" style="width: 4.5em;"></span></span>
+              </div>
+            </div>
+            <div class="medicine-item skeleton-ghost">
+              <div class="med-info">
+                <div style="display:flex; align-items:center; gap:8px;">
+                  <span class="med-name"><span class="skeleton-bar" style="width: 6em;"></span></span>
+                  <span class="status-badge skeleton-badge">미분류</span>
+                </div>
+                <div class="med-stock"><span class="skeleton-bar" style="width: 9em;"></span></div>
+              </div>
+              <div style="text-align: right; display:flex; flex-direction:column; align-items:flex-end; gap:4px;">
+                <span class="status-badge skeleton-badge">적정</span>
+                <span style="font-size:10px;"><span class="skeleton-bar" style="width: 5em;"></span></span>
+              </div>
+            </div>
+            <div class="medicine-item skeleton-ghost">
+              <div class="med-info">
+                <div style="display:flex; align-items:center; gap:8px;">
+                  <span class="med-name"><span class="skeleton-bar" style="width: 3.8em;"></span></span>
+                  <span class="status-badge skeleton-badge">미분류</span>
+                </div>
+                <div class="med-stock"><span class="skeleton-bar" style="width: 10.5em;"></span></div>
+              </div>
+              <div style="text-align: right; display:flex; flex-direction:column; align-items:flex-end; gap:4px;">
+                <span class="status-badge skeleton-badge">적정</span>
+                <span style="font-size:10px;"><span class="skeleton-bar" style="width: 4.5em;"></span></span>
+              </div>
+            </div>
+            <div class="medicine-item skeleton-ghost">
+              <div class="med-info">
+                <div style="display:flex; align-items:center; gap:8px;">
+                  <span class="med-name"><span class="skeleton-bar" style="width: 5em;"></span></span>
+                  <span class="status-badge skeleton-badge">미분류</span>
+                </div>
+                <div class="med-stock"><span class="skeleton-bar" style="width: 8em;"></span></div>
+              </div>
+              <div style="text-align: right; display:flex; flex-direction:column; align-items:flex-end; gap:4px;">
+                <span class="status-badge skeleton-badge">적정</span>
+                <span style="font-size:10px;"><span class="skeleton-bar" style="width: 5em;"></span></span>
+              </div>
+            </div>
+            <div class="medicine-item skeleton-ghost">
+              <div class="med-info">
+                <div style="display:flex; align-items:center; gap:8px;">
+                  <span class="med-name"><span class="skeleton-bar" style="width: 4.2em;"></span></span>
+                  <span class="status-badge skeleton-badge">미분류</span>
+                </div>
+                <div class="med-stock"><span class="skeleton-bar" style="width: 9.8em;"></span></div>
+              </div>
+              <div style="text-align: right; display:flex; flex-direction:column; align-items:flex-end; gap:4px;">
+                <span class="status-badge skeleton-badge">적정</span>
+                <span style="font-size:10px;"><span class="skeleton-bar" style="width: 4.5em;"></span></span>
+              </div>
+            </div>
+            <div class="medicine-item skeleton-ghost">
+              <div class="med-info">
+                <div style="display:flex; align-items:center; gap:8px;">
+                  <span class="med-name"><span class="skeleton-bar" style="width: 5.8em;"></span></span>
+                  <span class="status-badge skeleton-badge">미분류</span>
+                </div>
+                <div class="med-stock"><span class="skeleton-bar" style="width: 10.2em;"></span></div>
+              </div>
+              <div style="text-align: right; display:flex; flex-direction:column; align-items:flex-end; gap:4px;">
+                <span class="status-badge skeleton-badge">적정</span>
+                <span style="font-size:10px;"><span class="skeleton-bar" style="width: 5em;"></span></span>
+              </div>
+            </div>
+            <div class="medicine-item skeleton-ghost">
+              <div class="med-info">
+                <div style="display:flex; align-items:center; gap:8px;">
+                  <span class="med-name"><span class="skeleton-bar" style="width: 3.6em;"></span></span>
+                  <span class="status-badge skeleton-badge">미분류</span>
+                </div>
+                <div class="med-stock"><span class="skeleton-bar" style="width: 8.8em;"></span></div>
+              </div>
+              <div style="text-align: right; display:flex; flex-direction:column; align-items:flex-end; gap:4px;">
+                <span class="status-badge skeleton-badge">적정</span>
+                <span style="font-size:10px;"><span class="skeleton-bar" style="width: 4.5em;"></span></span>
+              </div>
+            </div>
+          </div>
         </div>
         <div class="control-panel">
           <input type="file" class="csv-file-input" style="display: none;">

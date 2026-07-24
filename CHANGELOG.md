@@ -4,6 +4,15 @@
 
 ## [Unreleased]
 
+### Changed
+
+- **기동 로딩 표시를 스플래시 유지 방식에서 스켈레톤 UI 방식으로 교체** (`src/frontend/index.html`, `src/frontend/style.css`, `src/main/WindowManager.js`, `src/frontend/renderer.js`, `src/frontend/splash.js`)
+  - v1.8.1의 "렌더러 초기화 완료까지 스플래시 유지" 방식은 초기화가 느린 환경에서 스플래시가 수 초간 남아 기동이 늦어 보이는 단점이 있었습니다.
+  - 메인 윈도우를 다시 첫 페인트(`ready-to-show`) 시점에 바로 노출하되, 조회 탭 좌측의 카테고리 탭·약재 목록 자리에 `index.html` 내장 스켈레톤 고스트를 표시합니다. `App.init`의 첫 렌더링이 컨테이너 innerHTML을 교체하면서 스켈레톤은 자동 제거됩니다.
+  - 고스트는 실제 항목과 동일한 클래스 구조(`.medicine-item`/`.category-tab`/`.med-name`/`.med-stock`/`.status-badge`)에 텍스트 자리 바(`.skeleton-bar`, em 단위)와 투명 배지(`.skeleton-badge`)를 넣은 방식이라, 크기·간격이 실물 CSS에서 그대로 산출되어 화면 배율·폰트 변경에도 항상 실물과 일치합니다.
+  - shimmer는 transform 기반 애니메이션이라 초기화(DB 로드)로 메인 스레드가 바쁜 동안에도 움직임이 유지됩니다.
+  - 이에 따라 `renderer-init-complete` IPC와 스플래시의 데이터 로딩 진행률(60~95% 점진 상승, `ready` 100% 표시)을 제거하고, 스플래시는 업데이트 체크 전용으로 단순화했습니다. `UpdateManager.start()` 멱등화 수정은 그대로 유지됩니다.
+
 ## [1.8.1] - 2026-07-24
 
 윈도우 저사양 환경의 기동 UX 개선(데이터 로딩 완료 후 창 노출)과 자동 업데이트 리스너 중복 등록 수정을 담은 패치 릴리스입니다.

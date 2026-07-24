@@ -276,6 +276,58 @@ body {
   padding: 8px 16px;
 }
 
+/* ==== 초기 로딩 스켈레톤 ====
+   index.html에 정적으로 내장되어 첫 페인트~App.init 첫 렌더링 사이의 공백을 채웁니다.
+   첫 렌더링이 컨테이너 innerHTML을 교체하면서 자동으로 사라집니다.
+
+   크기를 고정하지 않습니다: 고스트가 실제 항목과 동일한 클래스(.medicine-item /
+   .category-tab / .med-name / .med-stock / .status-badge) 구조를 사용하므로,
+   높이·간격이 항상 실물 CSS에서 그대로 산출됩니다. (화면 배율·폰트 변경에도 자동 대응)
+   shimmer는 transform 기반이라 초기화로 메인 스레드가 바쁜 동안에도 애니메이션이 유지됩니다. */
+.skeleton-ghost {
+  pointer-events: none;
+}
+
+/* 텍스트 자리 표시 바: 부모의 font-size를 따라 1em 높이로 스케일링됩니다. */
+.skeleton-bar {
+  display: inline-block;
+  width: 5em;
+  height: 1em;
+  border-radius: 0.3em;
+  background-color: var(--bg-input);
+  vertical-align: middle;
+  position: relative;
+  overflow: hidden;
+}
+
+/* 배지 자리 표시: 실제 .status-badge의 패딩/폰트 크기를 그대로 사용해 크기가 일치합니다. */
+.skeleton-badge {
+  background-color: var(--bg-input) !important;
+  color: transparent !important;
+  position: relative;
+  overflow: hidden;
+}
+
+.skeleton-bar::after,
+.skeleton-badge::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  height: 100%;
+  width: 60%;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.45), transparent);
+  transform: translateX(-100%);
+  animation: skeleton-shimmer 1.4s ease-in-out infinite;
+  will-change: transform;
+}
+
+@keyframes skeleton-shimmer {
+  to {
+    transform: translateX(270%);
+  }
+}
+
 .medicine-item {
   display: flex;
   align-items: center;
